@@ -1,0 +1,7 @@
+name = "NeidSolarScripts"
+uuid = "71cacfaf-3521-4e83-9e04-9e5e1461b034"
+authors = ["Eric Ford"]
+version = "0.0.1"
+
+[compat]
+julia = "1.5"
