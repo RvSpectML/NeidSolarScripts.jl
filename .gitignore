@@ -5,6 +5,7 @@ data_paths.jl
 *.jl.*.cov
 *.jl.cov
 *.jl.mem
+Manifest.toml
 /Manifest.toml
 /docs/Manifest.toml
 /examples/Manifest.toml
@@ -13,6 +14,7 @@ data_paths.jl
 /test/Manifest.toml
 
 # Large files to be downloaded outside of git
+/data/solar_line_list_espresso.csv
 /data/large
 
 # Temporary files
