@@ -28,6 +28,7 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 [compat]
 EchelleCCFs = ">=0.1.8"
 EchelleInstruments = ">=0.1.8"
+Missings = "0.4"
 RvSpectML = ">=0.1.9"
 RvSpectMLBase = ">=0.1.6"
 Scalpels = ">=0.1.0"
