@@ -194,8 +194,10 @@ fwtf = 1.5; println("# mask_scale_factor = ", msf, ", frac_width_to_fit =  ", fw
 
  delay_until_first_obs_used_for_fit = 1/24
  times = copy(order_list_timeseries.times)
- Δt_fit = min(time_max_alt_sun-(first(times)+delay_until_first_obs_used_for_fit),last(times)-time_max_alt_sun)
+ #Δt_fit = min(time_max_alt_sun-(first(times)+delay_until_first_obs_used_for_fit),last(times)-time_max_alt_sun)
+ Δt_fit = 2.0/24
  idx_first_obs_to_fit = findfirst(t->time_max_alt_sun-t<=Δt_fit,times)
+ @assert 1 <= idx_first_obs_to_fit length(times)
  idx_last_obs_to_fit = findlast(t->t-time_max_alt_sun<=Δt_fit,times)
  idx_to_fit = idx_first_obs_to_fit:idx_last_obs_to_fit
  times .-= time_max_alt_sun
@@ -206,7 +208,8 @@ fwtf = 1.5; println("# mask_scale_factor = ", msf, ", frac_width_to_fit =  ", fw
  v_fit = (x*linfit)
  v_t0 = [[0] [1]]*linfit
  (times_binned, rvs_binned) = bin_times_and_rvs_max_Δt(times=times, rvs=rvs_ccf_espresso, Δt_threshold=5/(60*24))
- idx_to_fit_binned = findfirst(t->t>=times[first(idx_to_fit)], times_binned):findlast(t->t<=times[last(idx_to_fit)], times_binned)
+ #idx_to_fit_binned = findfirst(t->t>=times[first(idx_to_fit)], times_binned):findlast(t->t<=times[last(idx_to_fit)], times_binned)
+ idx_to_fit_binned = findfirst(t->time_max_alt_sun-t<=Δt_fit,times_binned):findlast(t->t-time_max_alt_sun<=Δt_fit,times_binned)
  x = [times_binned  ones(length(times_binned)) ]
  v_fit_binned = x*linfit
  println("# RMS to linear fit: ", std(rvs_ccf_espresso[idx_to_fit].-v_fit[idx_to_fit]), " m/s.  Binned: ", std(rvs_binned[idx_to_fit_binned].-v_fit_binned[idx_to_fit_binned]))
