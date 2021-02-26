@@ -24,6 +24,7 @@ hostname = gethostname()
    # Good days identified by Andrea
    good_days = ["20201215", "20201216", "20201218", "20201219", "20201220", "20201226", "20201230", "20210104", "20210109", "20210110", "20210111", "20210112", "20210115", "20210118" ]
    very_good_days = ["20201216", "20201220", "20210109", "20210110", "20210111", "20210112" ]
+   #good_days = ["20210115" ]
    function is_good_day(fn::AbstractString)
       m = match(r"neidL1_(\d+)T\d+\.fits", fn)
       if m != Nothing
@@ -42,6 +43,11 @@ global df_files
       #@take(max_spectra_to_use) |>
       DataFrame
    global df_files_solar_by_day = df_files_use |> @groupby(floor(Int64,_.bjd)) |> @map({obsjd_int=key(_), data=_ } ) |> DataFrame
+   if 1 <= idx_day_to_use <= size(df_files_solar_by_day,1)
+      df_files_use = df_files_solar_by_day[idx_day_to_use,:data] |> @orderby(_.bjd) |> DataFrame
+   else
+      exit()
+   end
    if size(df_files_use,1) > max_spectra_to_use
-      df_files_use = df_files_solar_by_day[idx_day_to_use,:data] |> @orderby(_.bjd) |> @take(max_spectra_to_use) |> DataFrame
+         df_files_use = df_files_use |> @orderby(-_.bjd) |> @take(max_spectra_to_use) |> @orderby(_.bjd) |> DataFrame
    end

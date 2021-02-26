@@ -12,5 +12,5 @@ julia -e 'idx_day_to_use=9; include("examples/calc_ccfs.jl")';
 julia -e 'idx_day_to_use=10; include("examples/calc_ccfs.jl")';
 julia -e 'idx_day_to_use=11; include("examples/calc_ccfs.jl")';
 julia -e 'idx_day_to_use=12; include("examples/calc_ccfs.jl")';
-julia -e 'idx_day_to_use=13; include("examples/calc_ccfs.jl")';
-julia -e 'idx_day_to_use=14; include("examples/calc_ccfs.jl")';
+#julia -e 'idx_day_to_use=13; include("examples/calc_ccfs.jl")';
+#julia -e 'idx_day_to_use=14; include("examples/calc_ccfs.jl")';
