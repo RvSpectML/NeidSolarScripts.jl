@@ -9,6 +9,8 @@ verbose = true
  using EchelleInstruments, EchelleInstruments.NEID
  using EchelleCCFs
  using RvSpectML
+ using NeidSolarScripts
+ using NeidSolarScripts.SolarRotation
  if verbose   println("# Loading other packages")    end
  using CSV, DataFrames, Query, StatsBase, Statistics, Dates
  using JLD2, FileIO
@@ -16,7 +18,7 @@ verbose = true
 
 target_subdir = "good_days"   # USER: Replace with directory of your choice
   fits_target_str = "Sun"
-  output_dir = "output/"
+  output_dir = "output56/"
   outputs = Dict{String,Any}()
   paths_to_search_for_param = [pwd(),"examples",joinpath(pkgdir(RvSpectMLBase),"..","RvSpectML","examples"), "/gpfs/scratch/jpn23/"]
   # NOTE: make_manifest does not update its paths_to_search when default_paths_to_search is defined here, so if you change the line above, you must also include "paths_to_search=default_paths_to_search" in the make_manifest() function call below
@@ -53,7 +55,7 @@ if verbose println("# Reading in customized parameters from param.jl.")  end
    end
    outputs["df_files_use"] = df_files_use
 
-   outputs_filename = joinpath(output_dir,"solar_" * date_str * ".jld2")
+   outputs_filename = joinpath(output_dir,"solar_" * date_str * "_new.jld2")
    if isfile(outputs_filename) && false
      times_already_processed = load(outputs_filename, "times")
      files_in_day_to_process = size(df_files_solar_by_day.data[idx_day_to_use],1)
@@ -74,7 +76,7 @@ if verbose println("# Reading in ", size(df_files_use,1), " FITS files for ", da
 
 line_width_50_default = 7.9e3
  lsf_width = 3.0e3
- max_mask_scale_factor = 4.0
+ max_mask_scale_factor = max(lsf_width,line_width_50_default/sqrt(8*log(2)))/default_ccf_mask_v_width(NEID2D()) # 4.0
  max_bc = RvSpectMLBase.max_bc
  #max_bc = RvSpectMLBase.max_bc_earth_rotation
  if isfile(joinpath("data","solar_line_list_espresso.csv"))
@@ -90,7 +92,7 @@ line_width_50_default = 7.9e3
     linelist_for_ccf_fn_w_path = joinpath(pkgdir(EchelleCCFs),"data","masks",line_list_filename)
 
     line_list_espresso = prepare_line_list(linelist_for_ccf_fn_w_path, all_spectra, pipeline_plan, v_center_to_avoid_tellurics=ccf_mid_velocity,
-       Δv_to_avoid_tellurics = 2*max_bc+5*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID1D()), orders_to_use=good_orders, recalc=true, verbose=true)
+       Δv_to_avoid_tellurics = 2*max_bc+5*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID2D()), orders_to_use=good_orders, recalc=true, verbose=true)
 
     #CSV.write(joinpath("data","solar_line_list_espresso.csv"), line_list_espresso)
  end
@@ -102,6 +104,11 @@ line_width_50_default = 7.9e3
 good_orders = 56:111 # orders_to_use_default(NEID2D())
  #good_orders = 57:96 # orders_to_use_default(NEID2D())
  #good_orders = 55 .+ vcat(1:14, 17:24, 27:29, 37:38,40:41)
+ #good_orders = 55 .+ collect(1:14)
+ good_orders = 55 .+ collect(17:24)
+ #good_orders = 55 .+ vcat(collect(17:24), collect(27:29), collect(37:38),collect(40:41))
+ #good_orders = 55 .+ vcat(collect(27:29), collect(37:38),collect(40:41))
+ #good_orders = [55, 56, 57]
  order_list_timeseries = extract_orders(all_spectra,pipeline_plan,  orders_to_use=good_orders, remove_bad_chunks=false, recalc=true )
  outputs["times"] = order_list_timeseries.times
  alt_sun = map(i->calc_solar_alt(all_spectra[i].metadata[:bjd]),1:length(all_spectra))
@@ -145,7 +152,8 @@ end
 =#
 
 using Plots
- plot(map(obsid->NaNMath.sum(order_list_timeseries[obsid].data[10].flux)/(NaNMath.sum(order_list_timeseries[obsid].data[30].flux)), 1:length(all_spectra)),label="Raw")
+ plot(map(obsid->NaNMath.sum(order_list_timeseries[obsid].data[1].flux)/(NaNMath.sum(order_list_timeseries[obsid].data[end].flux)),
+                    1:length(all_spectra)),label="Raw")
  #plot!(map(obsid->NaNMath.sum(order_list_timeseries[obsid].data[10].flux)*order_weights[10,obsid]/(NaNMath.sum(order_list_timeseries[obsid].data[30].flux*order_weights[30,obsid])), 1:length(all_spectra)),label="weighted")
  #plot!(map(obsid->NaNMath.sum(order_list_timeseries[obsid].data[10].flux)*order_weights[10,obsid]^2/(NaNMath.sum(order_list_timeseries[obsid].data[30].flux*order_weights[30,obsid]^2)), 1:length(all_spectra)),label="weighted^2")
 
@@ -170,21 +178,26 @@ for obsid in 1:length(order_list_timeseries)
     end
 end
 =#
+Δfwhm² = CalculateFWHMDifference_SolarRotation_from_obs.(order_list_timeseries.times,obs=:WIYN)
+Δfwhm = 1000.0 .* sqrt.(maximum(Δfwhm²).-Δfwhm²)  # How much to increase fwhm by to acheive uniform fwhm
 
 #msf = 1.4; fwtf = 1.5
 #msf = 6.0; fwtf = 1.5
-msf = 0.62; fwtf = 1.5  # one pixel because tophat not using NEID's default v width
+#msf = 0.62; fwtf = 1.5  # one pixel because tophat not using NEID's default v width
+#msf = 1.0; fwtf = 1.5  # using NEID's default v width
+msf = lsf_width/default_ccf_mask_v_width(NEID2D()); fwtf = 0.5  # using LSF width
+#msf = line_width_50_default/default_ccf_mask_v_width(NEID2D()); fwtf = 1.0  # using line width
 #msf = 1.24; fwtf = 1.5   # two pixels
  println("# mask_scale_factor = ", msf, ", frac_width_to_fit =  ", fwtf, ". ")
  ((ccfs_espresso, ccf_vars_espresso), v_grid) = ccf_total(order_list_timeseries, line_list_espresso, pipeline_plan,
-   #mask_type=:gaussian,
-   mask_scale_factor=msf, range_no_mask_change=5*line_width_50, ccf_mid_velocity=ccf_mid_velocity, v_step=155,
+   mask_type=:gaussian, Δfwhm=Δfwhm,
+   mask_scale_factor=msf, range_no_mask_change=5*line_width_50, ccf_mid_velocity=ccf_mid_velocity, v_step=25, #155,
    v_max=max(5*line_width_50,2*max_bc), allow_nans=true, calc_ccf_var=true, recalc=true)
   outputs["v_grid"] = v_grid
   outputs["ccfs_espresso"] = ccfs_espresso
   outputs["ccf_vars_espresso"] = ccf_vars_espresso
 
-fwtf = 1.5; println("# mask_scale_factor = ", msf, ", frac_width_to_fit =  ", fwtf, ". ")
+fwtf = 0.5; println("# mask_scale_factor = ", msf, ", frac_width_to_fit =  ", fwtf, ". ")
  alg_fit_rv =  EchelleCCFs.MeasureRvFromCCFGaussian(frac_of_width_to_fit=fwtf)
  rvs_ccf_espresso = RvSpectML.calc_rvs_from_ccf_total(ccfs_espresso, ccf_vars_espresso, pipeline_plan, v_grid=v_grid, times = order_list_timeseries.times, recalc=true, bin_nightly=true, alg_fit_rv=alg_fit_rv)
  σ_rvs_espresso = deepcopy(read_cache(pipeline_plan,:σ_rvs_ccf_total))
@@ -195,21 +208,24 @@ fwtf = 1.5; println("# mask_scale_factor = ", msf, ", frac_width_to_fit =  ", fw
  delay_until_first_obs_used_for_fit = 1/24
  times = copy(order_list_timeseries.times)
  #Δt_fit = min(time_max_alt_sun-(first(times)+delay_until_first_obs_used_for_fit),last(times)-time_max_alt_sun)
- Δt_fit = 2.0/24
+ Δt_fit = 1.5/24
  idx_first_obs_to_fit = findfirst(t->time_max_alt_sun-t<=Δt_fit,times)
  @assert 1 <= idx_first_obs_to_fit length(times)
  idx_last_obs_to_fit = findlast(t->t-time_max_alt_sun<=Δt_fit,times)
  idx_to_fit = idx_first_obs_to_fit:idx_last_obs_to_fit
+ (mean_rv_to_fit, std_rv_to_fit) = mean_and_std(rvs_ccf_espresso[idx_to_fit])
+ idx_for_robust_fit = idx_to_fit[mean_rv_to_fit-2*std_rv_to_fit .<= rvs_ccf_espresso[idx_to_fit] .<= mean_rv_to_fit+2*std_rv_to_fit]
  times .-= time_max_alt_sun
  #times = order_list_timeseries.times.-first(order_list_timeseries.times)
- x = [times[idx_to_fit]  ones(length(times[idx_to_fit])) ]
- linfit = (x'*x)\x'*(rvs_ccf_espresso[idx_to_fit])
+ x = [times[idx_for_robust_fit]  ones(length(times[idx_for_robust_fit])) ]
+ linfit = (x'*x)\x'*(rvs_ccf_espresso[idx_for_robust_fit])
  x = [times  ones(length(times)) ]
  v_fit = (x*linfit)
  v_t0 = [[0] [1]]*linfit
  (times_binned, rvs_binned) = bin_times_and_rvs_max_Δt(times=times, rvs=rvs_ccf_espresso, Δt_threshold=5/(60*24))
  #idx_to_fit_binned = findfirst(t->t>=times[first(idx_to_fit)], times_binned):findlast(t->t<=times[last(idx_to_fit)], times_binned)
- idx_to_fit_binned = findfirst(t->time_max_alt_sun-t<=Δt_fit,times_binned):findlast(t->t-time_max_alt_sun<=Δt_fit,times_binned)
+ #idx_to_fit_binned = findfirst(t->time_max_alt_sun-t.<=Δt_fit,times_binned):findlast(t->t-time_max_alt_sun.<=Δt_fit,times_binned)
+ idx_to_fit_binned = findfirst(t->t>=-Δt_fit,times_binned):findlast(t->t<=Δt_fit,times_binned)
  x = [times_binned  ones(length(times_binned)) ]
  v_fit_binned = x*linfit
  println("# RMS to linear fit: ", std(rvs_ccf_espresso[idx_to_fit].-v_fit[idx_to_fit]), " m/s.  Binned: ", std(rvs_binned[idx_to_fit_binned].-v_fit_binned[idx_to_fit_binned]))
@@ -228,6 +244,7 @@ using Plots
  vline!(plt,[-Δt_fit,Δt_fit].* 24, label=:none, color=:grey)
  vline!(plt,[0].* 24, label=:none, color=:orange)
  xlims!(plt,-3.5,3.5)
+ ylims!(plt,minimum(rvs_ccf_espresso.-v_fit)-0.5*std_rv_to_fit, maximum(rvs_ccf_espresso.-v_fit)+0.5*std_rv_to_fit)
  xlabel!(plt,"Time (hr)")
  ylabel!(plt,"RV - linear fit (m/s)")
  title!(plt,"Sun " * date_str * " CCF ESPRESSO\n" *
@@ -259,7 +276,8 @@ using Plots
  ylims!(plt,-3.5,3.5)
  #vline!([-2.1e4], color=4, label=:none)
  display(plt)
- savefig(joinpath(output_dir,"ccf_heatmaps_sun_" * date_str * "_espresso_msf=" * string(round(msf,digits=1)) * ".png"))
+ #savefig(joinpath(output_dir,"ccf_heatmaps_sun_" * date_str * "_espresso_msf=" * string(round(msf,digits=1)) * ".png"))
+ savefig(joinpath(output_dir,"ccf_heatmaps_sun_" * date_str * "_espresso_msf=" * string(round(msf,digits=1)) * "_new.png"))
 
  outputs["mean_ccf"] = ccf_template
 
@@ -269,7 +287,8 @@ gp_post = RvSpectML.TemporalGPInterpolation.construct_gp_posterior(v_grid,ccf_te
  norm = sum(abs2.(ccf_template_deriv[cols_to_fit]))
  rvs_proj = vec(sum((ccf_template_smooth[cols_to_fit].-ccfs_norm[cols_to_fit,:]).*ccf_template_deriv[cols_to_fit],dims=1)./norm)
  σ_rvs_proj = vec(sum((ccf_vars_norm[cols_to_fit]).*abs2.(ccf_template_deriv[cols_to_fit]),dims=1))./ norm
- ccf_resid_minus_rv_proj = (ccfs_norm.-ccf_template).+(rvs_proj.*ccf_template_deriv')'
+ #ccf_resid_minus_rv_proj = (ccfs_norm.-ccf_template).+(rvs_proj.*ccf_template_deriv')'
+ ccf_resid_minus_rv_proj = (ccfs_norm.-ccf_template).+((v_fit.-mean(v_fit)).*ccf_template_deriv')'
 
  outputs["ccf_template_smooth"] = ccf_template_smooth
  outputs["rvs_proj"] = rvs_proj
@@ -287,8 +306,10 @@ maxabsz = maximum(abs.(extrema(ccf_resid_minus_rv_proj)))
  hline!(plt,[-Δt_fit,Δt_fit].*24, label=:none, color=:grey)
  hline!(plt,[0.], label=:none, color=:orange)
  ylims!(plt,-3.5,3.5)
+ #zlims!(plt,-0.0005,0.0005)
  display(plt)
- savefig(joinpath(output_dir,"ccf_resid_heatmaps_sun_" * date_str * "_espresso_msf=" * string(round(msf,digits=1)) * ".png"))
+ #savefig(joinpath(output_dir,"ccf_resid_heatmaps_sun_" * date_str * "_espresso_msf=" * string(round(msf,digits=1)) * ".png"))
+ savefig(joinpath(output_dir,"ccf_resid_heatmaps_sun_" * date_str * "_espresso_msf=" * string(round(msf,digits=1)) * "_new.png"))
 
 
 
@@ -312,6 +333,8 @@ max_orders = 56:111
       Δv_to_avoid_tellurics = 1*RvSpectMLBase.max_bc+5*line_width_50+2*default_ccf_mask_v_width(EXPRES1D()),
       orders_to_use=max_orders, recalc=true, verbose=true)
 =#
+
+#=
 good_orders = orders_to_use_default(NEID2D())
 
 (order_ccfs, order_ccf_vars, v_grid_order_ccfs) = ccf_orders(order_list_timeseries, line_list_espresso, pipeline_plan, mask_scale_factor=msf, ccf_mid_velocity=ccf_mid_velocity,
@@ -395,6 +418,7 @@ end
 outputs["order_rvs_g"] = order_rvs_g
 outputs["order_rvs_t"] = order_rvs_t
 
+=#
 #=
 outputs[""] =
 outputs[""] =
