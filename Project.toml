@@ -39,6 +39,7 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [compat]
 AstroLib = "0.4"
+Atom = "0.12"
 CSV = "0.7"
 DataFrames = "0.21"
 EchelleCCFs = ">=0.1.11"
