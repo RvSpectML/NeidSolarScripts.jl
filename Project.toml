@@ -40,6 +40,7 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 [compat]
 AstroLib = "0.4"
 CSV = "0.7"
+ColorSchemes = "3.12"
 DataFrames = "0.21"
 EchelleCCFs = ">=0.1.11"
 EchelleInstruments = ">=0.1.10"
