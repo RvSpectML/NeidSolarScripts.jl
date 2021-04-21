@@ -15,4 +15,7 @@ export CalculateFWHMDifference_SolarRotation_from_long_lat_alt, CalculateFWHMDif
 include("diff_solar_extinction.jl")
 export DifferentialExtinction
 
+include("continuum.jl")
+export Continuum
+
 end

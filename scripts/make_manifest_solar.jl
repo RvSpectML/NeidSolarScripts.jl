@@ -5,26 +5,25 @@ if occursin(r"RvSpectMLEcoSystem$", pwd())
  end
 
 verbose = true
- make_plots = true
  if verbose && !isdefined(Main,:RvSpectML)  println("# Loading RvSpecML")    end
  using RvSpectMLBase
  using EchelleInstruments, EchelleInstruments.NEID
- # using EchelleCCFs
  using RvSpectML
- if verbose && println("# Loading NeidSolarScripts")    end
+ if verbose println("# Loading NeidSolarScripts")    end
  using NeidSolarScripts
  using NeidSolarScripts.SolarRotation
  using NeidSolarScripts.DifferentialExtinction
  if verbose   println("# Loading other packages")    end
  using CSV, DataFrames, Query, Dates
  #using StatsBase, Statistics, Dates
- #using JLD2, FileIO
- #using NaNMath
 
 #target_subdir = "/mnt/data_simons/NEID/DRPv0.7-fixedflatfielding2"   # USER: Replace with directory of your choice
 fits_target_str = "Sun"
  if !@isdefined(target_subdir)
       target_subdir = ""
+ end
+ if !@isdefined(create_missing_continuum_files)
+     create_missing_continuum_files = true
  end
  paths_to_search_for_param = [pwd(),pkgdir(NeidSolarScripts)]
 
@@ -37,6 +36,7 @@ fits_target_str = "Sun"
  output_path = joinpath(neid_data_path, target_subdir,output_dir)
  manifest_filename = joinpath(output_path,"manifest.csv")
  manifest_calib_filename = joinpath(output_path,"manifest_calib.csv")
+
 
 can_skip_generating_manifest = false
 if isfile(manifest_filename) || islink(manifest_filename)
@@ -63,7 +63,7 @@ else
     println("# Will need to generate manifest at ", manifest_filename, ".")
 end
 
-if can_skip_generating_manifest
+if can_skip_generating_manifest && !create_missing_continuum_files
     exit()
 end
 
@@ -124,6 +124,7 @@ if verbose println("# Reading in customized parameters from param.jl.")  end
 =#
 
 
+#using NaNMath
 df_files_use[!,:order_snrs] = fill(zeros(0),size(df_files_use,1))
    for (i,row) in enumerate(eachrow(df_files_use))
        #if row.target != "Sun" continue   end
@@ -138,9 +139,24 @@ df_files_use[!,:order_snrs] = fill(zeros(0),size(df_files_use,1))
        df_files_use[i,:order_snrs] = order_snr
    end
 
+println("# Writing manifest file.")
 CSV.write(manifest_filename, df_files_use)
       # Can extract vector of Reals turned into a string via:
       # df2 = CSV.read("test.csv", DataFrame)
       # map(i->parse.(Float64,split(df2[i,:order_snrs][2:end-1],',')),1:size(df2,1))
 
+
 #snr_matrix = hcat(df_files_use[!,:order_snrs]...)
+
+using JLD2, FileIO
+if create_missing_continuum_files
+   println("# Creating missing continuum files.")
+   for row in eachrow(df_files_use)
+     if isfile(row.continuum_filename) continue end
+     println("# Need to make ", row.continuum_filename )
+     spec = NEID.read_data(row)
+     output_filename = row.continuum_filename
+     continuum = Continuum.calc_continuum_model(spec)
+     @save output_filename continuum
+   end
+end
