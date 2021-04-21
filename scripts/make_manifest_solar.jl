@@ -89,7 +89,7 @@ df_files_use = df_files_obs |>
       DataFrame
 
 if fits_target_str == "Sun"
-    df_files_use[!,:alt_sun] = calc_solar_alt.(df_files_use.bjd)
+    df_files_use[!,:alt_sun] = calc_solar_alt.(df_files_use.bjd,obs=:WIYN)
     df_files_use[!,:airmass] = DifferentialExtinction.f_airmass.(DifferentialExtinction.f_z.(deg2rad.(df_files_use.alt_sun)))
     df_files_use[!,:Δv_diff_ext] = calc_Δv_diff_extinction.(df_files_use.bjd, obs=:WIYN)
     df_files_use[!,:Δfwhm²] = CalculateFWHMDifference_SolarRotation_from_obs.(df_files_use.bjd,obs=:WIYN)
