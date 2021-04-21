@@ -11,6 +11,7 @@ verbose = true
  using EchelleInstruments, EchelleInstruments.NEID
  # using EchelleCCFs
  using RvSpectML
+ if verbose && println("# Loading NeidSolarScripts")    end
  using NeidSolarScripts
  using NeidSolarScripts.SolarRotation
  using NeidSolarScripts.DifferentialExtinction
@@ -22,20 +23,20 @@ verbose = true
 
 #target_subdir = "/mnt/data_simons/NEID/DRPv0.7-fixedflatfielding2"   # USER: Replace with directory of your choice
 fits_target_str = "Sun"
-  target_subdir = ""
-  output_dir = "output"
-  paths_to_search_for_param = [pwd(),"examples",joinpath(pkgdir(RvSpectMLBase),"..","RvSpectML","examples"), "/gpfs/scratch/jpn23/"]
-  # NOTE: make_manifest does not update its paths_to_search when default_paths_to_search is defined here, so if you change the line above, you must also include "paths_to_search=default_paths_to_search" in the make_manifest() function call below
-  #pipeline_plan = PipelinePlan()
-  #dont_make_plot!(pipeline_plan, :movie)
+ if !@isdefined(target_subdir)
+      target_subdir = ""
+ end
+ paths_to_search_for_param = [pwd(),pkgdir(NeidSolarScripts)]
 
-if verbose println("# Finding what data files are avaliable.")  end
-eval(read_data_paths(paths_to_search=paths_to_search_for_param))
-@assert isdefined(Main,:neid_data_path)
-output_path = joinpath(neid_data_path, target_subdir,output_dir)
-
-manifest_filename = joinpath(output_path,"manifest.csv")
-manifest_calib_filename = joinpath(output_path,"manifest_calib.csv")
+ if verbose println("# Finding what data files are avaliable.")  end
+ eval(read_data_paths(paths_to_search=paths_to_search_for_param))
+ @assert isdefined(Main,:neid_data_path)
+ if !@isdefined(output_dir)
+    output_dir = "output"
+ end
+ output_path = joinpath(neid_data_path, target_subdir,output_dir)
+ manifest_filename = joinpath(output_path,"manifest.csv")
+ manifest_calib_filename = joinpath(output_path,"manifest_calib.csv")
 
 can_skip_generating_manifest = false
 if isfile(manifest_filename) || islink(manifest_filename)
