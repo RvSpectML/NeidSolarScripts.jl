@@ -17,6 +17,9 @@ Manifest.toml
 /data/solar_line_list_espresso.csv
 /data/large
 
+# Output files
+/output*
+
 # Temporary files
 tmp.jl
 /examples*/output
@@ -43,6 +46,10 @@ tmp.jl
 
 # Plots
 *.png
+
+# Temporarily ignore until implement workaround
+src/*.R
+src/*.diff
 
 # CCF Outputs
 *_ccf.fits
