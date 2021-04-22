@@ -1,4 +1,4 @@
 ENV["PYTHON"]=""
-using Pkg
+import Pkg
 Pkg.build("PyCall")
 
