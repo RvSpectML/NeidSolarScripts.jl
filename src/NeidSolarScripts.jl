@@ -1,8 +1,15 @@
+
 #__precompile__() # this module is safe to precompile
 module NeidSolarScripts
+#using PyCall
+
+#= 
+function __init__()
+  pyimport("astropy")
+end
+=#
 
 using Dates, LinearAlgebra
-#using PyCall
 
 # For computing effects of apparent solar rotation rate
 include("solar_rotation.jl")

@@ -1,3 +1,2 @@
-echo Installing barycorrpy
-${JULIA_DEPOT_PATH}/conda/3/bin/pip install barycorrpy
-echo Done
+#include("build_julia_specific_conda.jl")
+include("pyimports.jl")
