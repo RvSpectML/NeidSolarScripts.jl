@@ -39,7 +39,7 @@ global df_files
    global df_files_use = df_files |>
       @filter( _.target == fits_target_str ) |>
       #@filter(bjd_first_good <= _.bjd < bjd_last_good) |>
-      @filter( is_good_day(_.Filename) ) |>
+      #@filter( is_good_day(_.Filename) ) |>
       #@take(max_spectra_to_use) |>
       DataFrame
    global df_files_solar_by_day = df_files_use |> @groupby(floor(Int64,_.bjd)) |> @map({obsjd_int=key(_), data=_ } ) |> DataFrame

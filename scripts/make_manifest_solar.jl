@@ -57,7 +57,7 @@ if isfile(manifest_filename) || islink(manifest_filename)
         df_files[!,:order_snrs] = map(i->parse.(Float64,split(df_files[i,:order_snrs][2:end-1],',')),1:size(df_files,1))
     end
     @assert eltype(df_files[!,:order_snrs]) == Vector{Float64}
-    println("# Required fields present.  No need to regenerate manifest.")
+    println("# Required fields present ", size(df_files), ".  No need to regenerate manifest.")
     can_skip_generating_manifest = true
 else
     println("# Will need to generate manifest at ", manifest_filename, ".")
@@ -155,6 +155,7 @@ if create_missing_continuum_files
    for row in eachrow(df_files_use)
      if isfile(row.continuum_filename) continue end
      println("# Need to make ", row.continuum_filename )
+     continue
      spec = NEID.read_data(row)
      output_filename = row.continuum_filename
      continuum = Continuum.calc_continuum_model(spec)
