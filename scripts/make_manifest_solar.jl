@@ -1,9 +1,3 @@
-if occursin(r"RvSpectMLEcoSystem$", pwd())
-    cd("NeidSolarScripts")
-    using Pkg
-    Pkg.activate(".")
- end
-
 verbose = true
  if verbose && !isdefined(Main,:RvSpectML)  println("# Loading RvSpecML")    end
  using RvSpectMLBase
@@ -17,26 +11,22 @@ verbose = true
  using CSV, DataFrames, Query, Dates
  #using StatsBase, Statistics, Dates
 
-#target_subdir = "/mnt/data_simons/NEID/DRPv0.7-fixedflatfielding2"   # USER: Replace with directory of your choice
 fits_target_str = "Sun"
  if !@isdefined(target_subdir)
       target_subdir = ""
  end
  if !@isdefined(create_missing_continuum_files)
-     create_missing_continuum_files = false
+     create_missing_continuum_files = true
  end
  paths_to_search_for_param = [pwd(),pkgdir(NeidSolarScripts)]
 
  if verbose println("# Finding what data files are avaliable.")  end
  eval(read_data_paths(paths_to_search=paths_to_search_for_param))
  @assert isdefined(Main,:neid_data_path)
- if !@isdefined(output_dir)
-    output_dir = "output"
- end
+ @assert isdefined(Main,:output_dir)
  output_path = joinpath(neid_data_path, target_subdir,output_dir)
  manifest_filename = joinpath(output_path,"manifest.csv")
  manifest_calib_filename = joinpath(output_path,"manifest_calib.csv")
-
 
 can_skip_generating_manifest = false
 if isfile(manifest_filename) || islink(manifest_filename)
@@ -78,6 +68,7 @@ df_files_calib = df_files |>
 df_files_calib[!,:airmass] = fill(NaN,size(df_files_calib,1))
 CSV.write(manifest_calib_filename, df_files_calib)
 
+
 df_files_obs = df_files |>
     @filter( !any(map(ss->contains(_.target,ss),calibration_target_substrings)) ) |>
     DataFrame
@@ -89,10 +80,12 @@ df_files_use = df_files_obs |>
       #@take(max_spectra_to_use) |>
       DataFrame
 
-if fits_target_str == "Sun"
+if fits_target_str == "Sun" || fits_target_str == "Solar"
     df_files_use[!,:alt_sun] = calc_solar_alt.(df_files_use.bjd,obs=:WIYN)
     df_files_use[!,:airmass] = DifferentialExtinction.f_airmass.(DifferentialExtinction.f_z.(deg2rad.(df_files_use.alt_sun)))
+    println("# Computing differential extinction")
     df_files_use[!,:Δv_diff_ext] = calc_Δv_diff_extinction.(df_files_use.bjd, obs=:WIYN)
+    println("# FWHM effect")
     df_files_use[!,:Δfwhm²] = CalculateFWHMDifference_SolarRotation_from_obs.(df_files_use.bjd,obs=:WIYN)
 end
 
@@ -126,6 +119,7 @@ if verbose println("# Reading in customized parameters from param.jl.")  end
 
 
 #using NaNMath
+println("# Computing order SNRs")
 df_files_use[!,:order_snrs] = fill(zeros(0),size(df_files_use,1))
    for (i,row) in enumerate(eachrow(df_files_use))
        #if row.target != "Sun" continue   end
@@ -155,10 +149,19 @@ if create_missing_continuum_files
    for row in eachrow(df_files_use)
      if isfile(row.continuum_filename) continue end
      println("# Need to make ", row.continuum_filename )
-     continue
-     spec = NEID.read_data(row)
+
      output_filename = row.continuum_filename
+     tmpdir = basename(output_filename)
+     if !isdir(tmpdir)   
+        println("# Making ", tmpdir)
+        mkdir(tmpdir)  
+     end
+     #continue
+     spec = NEID.read_data(row.Filename)
      continuum = Continuum.calc_continuum_model(spec)
+
      @save output_filename continuum
    end
 end
+
+
