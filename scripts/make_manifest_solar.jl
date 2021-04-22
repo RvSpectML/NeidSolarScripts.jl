@@ -23,7 +23,7 @@ fits_target_str = "Sun"
       target_subdir = ""
  end
  if !@isdefined(create_missing_continuum_files)
-     create_missing_continuum_files = true
+     create_missing_continuum_files = false
  end
  paths_to_search_for_param = [pwd(),pkgdir(NeidSolarScripts)]
 
@@ -63,6 +63,7 @@ else
     println("# Will need to generate manifest at ", manifest_filename, ".")
 end
 
+can_skip_generating_manifest = false
 if can_skip_generating_manifest && !create_missing_continuum_files
     exit()
 end

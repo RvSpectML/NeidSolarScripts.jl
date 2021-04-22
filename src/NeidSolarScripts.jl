@@ -1,11 +1,13 @@
-using PyCall
 
-__precompile__() # this module is safe to precompile
+#__precompile__() # this module is safe to precompile
 module NeidSolarScripts
+#using PyCall
 
+#= 
 function __init__()
   pyimport("astropy")
 end
+=#
 
 using Dates, LinearAlgebra
 
