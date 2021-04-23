@@ -49,6 +49,11 @@ if isfile(manifest_filename) || islink(manifest_filename)
     @assert eltype(df_files[!,:order_snrs]) == Vector{Float64}
     println("# Required fields present ", size(df_files), ".  No need to regenerate manifest.")
     can_skip_generating_manifest = true
+    if any(isnan.(df_files[!,:order_snrs])) || 
+       any(isnan.(df_files[!,:Δfwhm²]))    ||
+       any(isnan.(df_files[!,:Δv_diff_ext]))   
+          can_skip_generating_manifest = false
+    end
 else
     println("# Will need to generate manifest at ", manifest_filename, ".")
 end
@@ -84,7 +89,18 @@ if fits_target_str == "Sun" || fits_target_str == "Solar"
     df_files_use[!,:alt_sun] = calc_solar_alt.(df_files_use.bjd,obs=:WIYN)
     df_files_use[!,:airmass] = DifferentialExtinction.f_airmass.(DifferentialExtinction.f_z.(deg2rad.(df_files_use.alt_sun)))
     println("# Computing differential extinction")
-    df_files_use[!,:Δv_diff_ext] = calc_Δv_diff_extinction.(df_files_use.bjd, obs=:WIYN)
+    try
+        df_files_use[!,:Δv_diff_ext] = calc_Δv_diff_extinction.(df_files_use.bjd, obs=:WIYN)
+    catch
+       try
+          println("# Encountered error with call to JplHorizons, sleeping and will try again.")
+          sleep(60)
+          df_files_use[!,:Δv_diff_ext] = calc_Δv_diff_extinction.(df_files_use.bjd, obs=:WIYN)
+       catch
+          println("# Encountered error with call to JplHorizons, using NaNs to proceed with rest of pipeline.")
+          df_files_use[!,:Δv_diff_ext] = fill(NaN,length(df_files_use.bjd))
+       end
+    end
     println("# FWHM effect")
     df_files_use[!,:Δfwhm²] = CalculateFWHMDifference_SolarRotation_from_obs.(df_files_use.bjd,obs=:WIYN)
 end
@@ -152,15 +168,20 @@ if create_missing_continuum_files
 
      output_filename = row.continuum_filename
      tmpdir = basename(output_filename)
+     #= 
      if !isdir(tmpdir)   
         println("# Making ", tmpdir)
         mkdir(tmpdir)  
      end
+     =#
      #continue
      spec = NEID.read_data(row.Filename)
-     continuum = Continuum.calc_continuum_model(spec)
-
-     @save output_filename continuum
+     try 
+        continuum = Continuum.calc_continuum_model(spec)
+        @save output_filename continuum
+     catch
+        println("# ERROR computing continuum for ", output_filename)
+     end
    end
 end
 
