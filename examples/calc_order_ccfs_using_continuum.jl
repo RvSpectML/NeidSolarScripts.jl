@@ -1,15 +1,9 @@
-if match(r"RvSpectMLEcoSystem$", pwd()) == true
-    cd("NeidSolarScripts")
-    using Pkg
-    Pkg.activate(".")
- end
-
 verbose = true
  if verbose && !isdefined(Main,:RvSpectML)  println("# Loading RvSpecML")    end
  using RvSpectMLBase
  using EchelleInstruments, EchelleInstruments.NEID
  using RvSpectML
- #if verbose println("# Loading NeidSolarScripts")    end
+ if verbose println("# Loading NeidSolarScripts")    end
  using NeidSolarScripts
  #using NeidSolarScripts.SolarRotation
  #using NeidSolarScripts.DifferentialExtinction
@@ -18,10 +12,11 @@ verbose = true
  using JLD2, FileIO
  #using StatsBase, Statistics, Dates
 
-target_subdir = "/mnt/data_simons/NEID/DRPv0.7-fixedflatfielding2"   # USER: Replace with directory of your choice
-output_dir = "output/"
-
 fits_target_str = "Sun"
+  #target_subdir = "/mnt/data_simons/NEID/DRPv0.7-fixedflatfielding2"   # USER: Replace with directory of your choice
+  #output_dir = "output/"
+  target_subdir = "/gpfs/group/ebf11/default/ebf11/neid_solar/data/outputs/20210330"
+  output_dir = ""
  if !@isdefined(target_subdir)
       target_subdir = ""
  end
@@ -34,6 +29,7 @@ fits_target_str = "Sun"
  eval(read_data_paths(paths_to_search=paths_to_search_for_param))
  @assert isdefined(Main,:neid_data_path)
  @assert isdefined(Main,:output_dir)
+ output_dir = ""
  output_path = joinpath(neid_data_path, target_subdir,output_dir)
  manifest_filename = joinpath(output_path,"manifest.csv")
  manifest_calib_filename = joinpath(output_path,"manifest_calib.csv")
@@ -60,7 +56,7 @@ else
 end
 
 
-paths_to_search_for_param = [pwd(),"examples",joinpath(pkgdir(RvSpectMLBase),"..","RvSpectML","examples"), "/gpfs/scratch/jpn23/"]
+paths_to_search_for_param = [pwd(),"..","examples",joinpath(pkgdir(RvSpectMLBase),"..","RvSpectML","examples"), "/gpfs/scratch/jpn23/"]
   # NOTE: make_manifest does not update its paths_to_search when default_paths_to_search is defined here, so if you change the line above, you must also include "paths_to_search=default_paths_to_search" in the make_manifest() function call below
   #outputs = Dict{String,Any}()
   pipeline_plan = PipelinePlan()
@@ -102,13 +98,14 @@ if verbose println("# Reading in ", size(df_files_use,1), " FITS files for ", da
 
 all_spectra = Spectra2DBasic{Float64, Float32, Float32, Matrix{Float64}, Matrix{Float32}, Matrix{Float32}, NEID2D}[]
 for (i,row) in enumerate(eachrow(df_files_use))
-    spec = NEID.read_data(row)
     m = match(r"(neidL1_\d+[T_]\d+)\.fits$", row.Filename)
-    continuum_filename = joinpath(neid_data_path,target_subdir,"output","continuum", m[1] * "_continuum=afs.jld2")
+    #continuum_filename = joinpath(neid_data_path,target_subdir,"output","continuum", m[1] * "_continuum=afs.jld2")
+    continuum_filename = joinpath(neid_data_path,target_subdir,output_dir,"continuum", m[1] * "_continuum=afs.jld2")
     if !(isfile(continuum_filename)||islink(continuum_filename))
         println("# Couldn't find matching continuum file", continuum_filename)
         continue
     end
+    spec = NEID.read_data(row)
     continuum = load(continuum_filename, "continuum")
     spec.flux ./= continuum
     spec.var ./= continuum.^2
@@ -165,7 +162,13 @@ msf = lsf_width/default_ccf_mask_v_width(NEID2D()); fwtf = 0.5  # using LSF widt
 orders_to_use2 = orders_to_use[map(i->!iszero(order_ccfs[:,i,:]),1:length(orders_to_use))]
 order_list_timeseries2 = extract_orders(all_spectra,pipeline_plan,  orders_to_use=orders_to_use2,  remove_bad_chunks=false, recalc=true )
 
-daily_ccf_filename = joinpath(neid_data_path,target_subdir,"output","ccfs", date_str * "_ccfs=default.jld2")
+ccf_dir = joinpath(neid_data_path,target_subdir,"ccfs")
+if !isdir(ccf_dir)
+   mkdir(ccf_dir)
+end
+
+#daily_ccf_filename = joinpath(neid_data_path,target_subdir,"output","ccfs", date_str * "_ccfs=default.jld2")
+daily_ccf_filename = joinpath(neid_data_path,target_subdir,"ccfs", date_str * "_ccfs=default.jld2")
   jldopen(daily_ccf_filename, "w") do f
     f["v_grid"] = v_grid_order_ccfs
     f["order_ccfs"] = order_ccfs
@@ -178,7 +181,8 @@ daily_ccf_filename = joinpath(neid_data_path,target_subdir,"output","ccfs", date
 
 for (i,row) in enumerate(eachrow(df_files_use))
     m = match(r"(neidL1_\d+[T_]\d+)\.fits$", row.Filename)
-    ccf_filename = joinpath(neid_data_path,target_subdir,"output","ccfs", m[1] * "_ccfs=default.jld2")
+    #ccf_filename = joinpath(neid_data_path,target_subdir,"output","ccfs", m[1] * "_ccfs=default.jld2")
+    ccf_filename = joinpath(neid_data_path,target_subdir,"ccfs", m[1] * "_ccfs=default.jld2")
     jldopen(ccf_filename, "w") do f
         f["v_grid"] = v_grid_order_ccfs
         f["order_ccfs"] = order_ccfs[:,:,i]
@@ -189,6 +193,7 @@ for (i,row) in enumerate(eachrow(df_files_use))
         end
         f["ccf_filename"] = ccf_filename
     end
+    if i==size(order_ccfs,3) break end
 end
 
 
