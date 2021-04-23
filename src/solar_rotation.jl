@@ -353,7 +353,7 @@ function get_solar_hour_angle(jd::Union{Real,Vector{<:Real}}; obs::Symbol)
 	ha = lst .- ra./15
 	ha[ha.<-12] .+= 24
 	ha[ha.>12] .-= 24
-	return ha	return dist
+	return ha
 end
 
 function get_earth_sun_dist(jd::Union{Real,Vector{<:Real}}; obs::Symbol)
