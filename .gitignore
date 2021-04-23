@@ -26,6 +26,11 @@ tmp.jl
 /plots
 /test/testdir
 
+/scripts/*.pbs
+/scripts/submit_make_manifests.sh
+/scripts/manif_*.o*
+/scripts/pbs_*
+
 # Documenter
 /docs/build/
 /docs/site/
