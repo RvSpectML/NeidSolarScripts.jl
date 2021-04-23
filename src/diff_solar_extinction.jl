@@ -9,6 +9,7 @@ __precompile__() # this module is safe to precompile
 module DifferentialExtinction
 using PyCall
 using Dates
+using DataFrames, CSV
 
 const JplHorizons = PyNULL()
 
@@ -16,15 +17,18 @@ function __init__()
 	copy!(JplHorizons , pyimport("astroquery.jplhorizons") )
 end
 
+import ..NeidSolarScripts
+import ..NeidSolarScripts.SolarRotation
+
 AU = 149597870.7  # km
 R_sun = 695700.0  # km # should we use better, but non-standard value, e.g, 695660?
+valid_obs = [:WIYN, :HARPSN]
 
 """ get_obs_loc(obs::Symbol)
  Returns a Dict with long & lat (degrees) and elevation (km)
  Warning: Currently only has info for :WIYN and :HARPSN.
 """
 function get_obs_loc(obs::Symbol)
-	valid_obs = [:WIYN, :HARPSN]
 	@assert obs ∈ valid_obs
 	if obs == :HARPSN
 		loc = Dict("lon"=> -17.88905, "lat"=> 28.754, "elevation"=> 2.3872)
@@ -130,7 +134,7 @@ Estimate apparent Δv (m/s) in solar observations due to differential extinction
 """
 function calc_Δv_diff_extinction end
 
-function calc_Δv_diff_extinction(;epochs::Union{Vector{Float64},Dict}, obs::Symbol, max_airmass::Float64 = 10.0, verbose::Bool = false)
+function query_horizons(;epochs::Union{Vector{Float64},Dict}, obs::Symbol, max_airmass::Float64 = 10.0, verbose::Bool = false)
 	if typeof(epochs) <: Dict
 		@assert haskey(epochs,"start")
 		@assert haskey(epochs,"stop")
@@ -140,11 +144,167 @@ function calc_Δv_diff_extinction(;epochs::Union{Vector{Float64},Dict}, obs::Sym
 	end
 	@assert 1 < max_airmass <= 10.0
 	loc = get_obs_loc(obs)
+	# Sometimes this fails.  Why?
 	obj = JplHorizons.Horizons(id="10", location=loc, epochs=epochs, id_type="majorbody")
 	eph = obj.ephemerides(quantities="1,4,8,17,20,42", airmass_lessthan=max_airmass, refraction=true)
 	if verbose  println(eph)  end
-	delta_vr = diff_extinct_corr.(eph.columns["datetime_jd"], eph.columns["EL"], eph.columns["hour_angle"], eph.columns["RA"], eph.columns["NPole_ang"], eph.columns["delta"].*AU, loc["lat"])
-	return (eph.columns["datetime_jd"], delta_vr)
+	return eph
+end
+
+function calc_Δv_diff_extinction_horizons(;epochs::Union{Vector{Float64},Dict}, obs::Symbol, max_airmass::Float64 = 10.0, verbose::Bool = false)
+	loc = get_obs_loc(obs)
+	eph = query_horizons(epochs=epochs,obs=obs,max_airmass=max_airmass, verbose=verbose)
+	delta_vr = diff_extinct_corr.(eph.columns["datetime_jd"], eph.columns["EL"],
+	 	eph.columns["hour_angle"], eph.columns["RA"],
+		eph.columns["NPole_ang"], eph.columns["delta"].*AU, loc["lat"])
+	return (jd=eph.columns["datetime_jd"], Δv=delta_vr)
+end
+
+function cache_horizons_output(year::Int64, obs::Symbol)
+	fn = "horizons_" * string(obs) * "_" * string(year) * ".csv"
+	filename = joinpath(dirname(pathof(NeidSolarScripts)),"..","data","horizons",fn)
+	if isfile(filename)
+		return
+	end
+	df = DataFrame(:jd=>Float64[], :sol_npole_ang=>Float64[], :sol_dist_au=>Float64[])
+	samples_per_day = 4
+	epoch_start = Dates.datetime2julian(DateTime(year,1,1))
+	for i in 1:samples_per_day
+		epoch_stop = epoch_start + ceil(Int64,366/samples_per_day)
+		epochs = collect(range(epoch_start,stop=epoch_stop,step=1.0/samples_per_day) )
+		eph = query_horizons(epochs=epochs, obs=obs, max_airmass=10.0)
+		df_tmp = DataFrame(:jd=>eph.columns["datetime_jd"], :sol_npole_ang=>eph.columns["NPole_ang"], :sol_dist_au=>eph.columns["delta"])
+		append!(df, df_tmp)
+		epoch_start = epoch_stop
+	end
+	CSV.write(filename,df)
+	return df
+end
+
+function read_horizons_output(jd::Union{Float64,Vector{Float64}}, obs::Symbol)
+	@assert obs ∈ valid_obs
+	years = unique(year.(Dates.julian2datetime.(jd)))
+	@assert length(years) >= 1
+	cache = Dict{Int64,Any}()
+	for year in years
+		fn = "horizons_" * string(obs) * "_" * string(year) * ".csv"
+		filename = joinpath(dirname(pathof(NeidSolarScripts)),"..","data","horizons",fn)
+		if isfile(filename)
+			cache[year] = CSV.read(filename, DataFrame)
+		else
+			cache[year] = cache_horizons_output(year, obs)
+		end
+		cache[year].sol_npole_ang[cache[year].sol_npole_ang .> 180] .-= 360
+	end
+	if length(years) == 1
+		return cache[first(keys(cache))]
+	else
+		sorted_keys = sort(collect(keys(cache)))
+		output = cache[first(sorted_keys)]
+		for k in sorted_keys[2:end]
+			append!(output,cache[k])
+		end
+		return output
+	end
+end
+
+function get_horizons_output(jd::Float64, obs::Symbol)
+  df = read_horizons_output(jd, obs)
+  idxlo = searchsortedlast(df.jd, jd)
+  @assert 1 <= idxlo < size(df,1)
+  idxhi = idxlo + 1
+  result = Dict{Symbol,Float64}()
+  num = jd-df.jd[idxlo]
+  denom = df.jd[idxhi]-df.jd[idxlo]
+  whi = num/denom
+  wlo = 1-whi
+  for k in Symbol.(names(df))
+	if k == :jd continue end
+  	result[k] = df[idxlo,k] * wlo +  df[idxhi,k] * whi
+  end
+  result[:jd] = jd
+  return result
+end
+
+function get_horizons_output(jd::Vector{Float64}, obs::Symbol)
+  df = read_horizons_output(jd, obs)
+  idxlo = map(t->searchsortedlast(df.jd, t),jd)
+  @assert all(1 .<= idxlo .< size(df,1))
+  result = DataFrame(:jd=>jd)
+  whi = (jd.-df.jd[idxlo]) ./ (df.jd[idxlo.+1].-df.jd[idxlo])
+  #wlo = 1.-whi
+  for k in  Symbol.(names(df))
+	if k == :jd continue end
+  	result[!,k] = df[idxlo,k] .* (1.0.-whi) .+  df[idxlo.+1,k] .* whi
+  end
+  return result
+end
+
+function calc_Δv_diff_extinction_astropy(;epochs::Vector{Float64}, obs::Symbol, max_airmass::Float64 = 10.0, verbose::Bool = false)
+	#=if typeof(epochs) <: Dict
+		@assert haskey(epochs,"start")
+		@assert haskey(epochs,"stop")
+		@assert haskey(epochs,"step")
+	else=#
+	if typeof(epochs) <: Vector{Float64}
+		@assert 1 <= length(epochs) <= 10000
+	end
+	@assert 1 < max_airmass <= 10.0
+	sol = SolarRotation.get_solar_info(epochs, obs=obs)
+	ha = sol.lst .- sol.ra./15
+	idx_visible = 0 .< sol.airmass .<= max_airmass
+	horizons = get_horizons_output(epochs[idx_visible],obs)
+	#delta = SolarRotation.get_earth_sun_dist.(epochs[idx_visible], obs=obs)
+	delta = sun.sol_dist_au
+	loc = get_obs_loc(obs)
+	#println(" jd = ", epochs, " delta_h = ", horizons.sol_dist_au, " delta_ap = ", delta)
+	#println(" diff = ", horizons.sol_dist_au.-delta)
+	delta_vr = diff_extinct_corr.(epochs[idx_visible], sol.alt[idx_visible], ha[idx_visible], sol.ra[idx_visible], horizons.sol_npole_ang, horizons.sol_dist_au.*AU, loc["lat"]) #eph["NPole_ang"], eph["delta"])
+	return delta_vr
+end
+
+function calc_Δv_diff_extinction_astropy(epoch::Float64; obs::Symbol, max_airmass::Float64 = 10.0, verbose::Bool = false)
+	@assert 1 < max_airmass <= 10.0
+	sol = SolarRotation.get_solar_info(epoch, obs=obs)
+	ha = sol[:lst] .- sol[:ra]./15
+	idx_visible = 0 < sol[:airmass] <= max_airmass
+	if !idx_visible return (jd=epoch, Δv = 0.0) end
+	horizons = get_horizons_output(epoch,obs)
+	#delta = SolarRotation.get_earth_sun_dist(epoch, obs=obs)
+	loc = get_obs_loc(obs)
+	delta_vr = diff_extinct_corr(epoch, sol[:alt], ha, sol[:ra], horizons[:sol_npole_ang], sol[:sol_dist_au].*AU, loc["lat"]) #eph["NPole_ang"], eph["delta"])
+	return delta_vr
+end
+
+function calc_Δv_diff_extinction(epoch::Float64; obs::Symbol, max_airmass::Float64 = 10.0, verbose::Bool = false)
+	calc_Δv_diff_extinction_astropy(epoch; obs=obs, max_airmass=max_airmass, verbose=verbose)
+end
+
+function compare_Horizons_Astropy(;epochs::Vector{Float64}, obs::Symbol, max_airmass::Float64 = 10.0, verbose::Bool = false)
+	eph = query_horizons(epochs=epochs,obs=obs,max_airmass=max_airmass, verbose=verbose)
+	delta_vr = diff_extinct_corr.(eph.columns["datetime_jd"], eph.columns["EL"],
+	 	eph.columns["hour_angle"], eph.columns["RA"],
+		eph.columns["NPole_ang"], eph.columns["delta"].*AU, loc["lat"])
+
+
+	sol = SolarRotation.get_solar_info(epochs, obs=obs)
+	ha = sol.lst .- sol.ra./15
+	idx_visible = 0 .< sol.airmass .<= max_airmass
+	delta = SolarRotation.get_earth_sun_dist.(epochs[idx_visible], obs=obs)
+
+	println("Horizons airmass =", eph.columns["airmass"])
+	println("Astropy  airmass =", sol.airmass[idx_visible])
+	println("Δjd = ", eph.columns["datetime_jd"], " vs ", epochs[idx_visible], " = ", eph.columns["datetime_jd"].-epochs[idx_visible])
+	println("Δalt = ", eph.columns["EL"].- sol.alt[idx_visible])
+	println("Δha = ", eph.columns["hour_angle"].- ha[idx_visible])
+	println("ΔRA = ", eph.columns["RA"].- sol.ra[idx_visible])
+
+	horizons = get_horizons_output(epochs[idx_visible],obs)
+	delta_vr_new = diff_extinct_corr.(epochs[idx_visible], sol.alt[idx_visible], ha[idx_visible], sol.ra[idx_visible], zeros(length(epochs[idx_visible])), fill(AU,length(epochs[idx_visible])), loc["lat"]) #eph["NPole_ang"], eph["delta"])
+
+	println("delta_vr_old = ", delta_vr, "\ndelta_vr_new = ", delta_vr_new)
+	println("delta = ", delta_vr.- delta_vr_new)
+	return (eph=eph, sol=sol, delta_vr_old=delta_vr, delta_vr_new=delta_vr_nw)
 end
 
 function calc_Δv_diff_extinction(bjd::Real; obs::Symbol, max_airmass::Float64 = 10.0, verbose::Bool = false)
