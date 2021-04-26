@@ -245,7 +245,13 @@ if verbose println("# Reading manifest of files to process.")  end
     end
     @assert eltype(df_files[!,:order_snrs]) == Vector{Float64}
 
-  max_snr = args["max_snr"] != nothing ? args["max_snr"] : maximum(sum.(df_files.order_snrs))
+  if  args["max_snr"] != nothing
+      max_snr = args["max_snr"]
+  elseif !@isdefined max_snr
+      df_files_tmp = df_files |>
+        @filter( args["target"] == nothing || _.target == args["target"] ) |> DataFrame
+      max_snr = maximum(sum.(df_files_tmp.order_snrs))
+  end
   @assert 0 < max_snr < Inf
 
   @assert args["max_airmass"] == nothing || 1 < args["max_airmass"] <= 10  # not tested beyond 10
@@ -262,14 +268,26 @@ if verbose println("# Reading manifest of files to process.")  end
     @filter( args["start_time"] == nothing || Time(julian2datetime(_.bjd)) >= start_time ) |>
     @filter( args["stop_time"] == nothing || Time(julian2datetime(_.bjd)) <= stop_time ) |> # TODO for other instruments may need to deal wtih cross end of 24 UTC
     @filter( args["min_snr_factor"] == nothing || sum(_.order_snrs) >= args["min_snr_factor"] * max_snr ) |>
-    @take(args["max_num_spectra"] ) |>
+    @take(args["max_num_spectra"] ) |> @orderby(-_.bjd) |>
     DataFrame
   println("# Found ", size(df_files_use,1), " files of ",  size(df_files,1), " to process.")
   @assert size(df_files_use,1) >= 1
 
+df_files_cleanest = df_files_use |>
+    @filter( _.airmass <= 2.0 ) |>
+    @filter( abs(_.solar_hour_angle) <= 1 ) |>
+    @filter( sum(_.order_snrs) >= 0.9 * max_snr ) |>
+    @take(args["max_num_spectra"] ) |>
+    DataFrame
+  println("# Found ", size(df_files_cleanest,1), " files considered clean.")
+  @assert size(df_files_cleanest,1) >= 1
+
+true
+
 pipeline_plan = PipelinePlan()
  if verbose println("# Reading data files.")  end
  all_spectra = Spectra2DBasic{Float64, Float32, Float32, Matrix{Float64}, Matrix{Float32}, Matrix{Float32}, NEID2D}[]
+ mean_clean_flux = []; mean_clean_var = []; mean_clean_flux_continuum_normalized = []; mean_clean_var_continuum_normalized = []
  for (i,row) in enumerate(eachrow(df_files_use))
     if !(isfile(row.Filename)||islink(row.Filename))
         println("# Couldn't find input FITS file: ", row.Filename)
@@ -281,10 +299,28 @@ pipeline_plan = PipelinePlan()
     end
     spec = NEID.read_data(row)
     file_hashes[row.Filename] = bytes2hex(sha256(row.Filename))
+    if row.Filename ∈ df_files_cleanest.Filename
+        if size(mean_clean_flux,1) == 0
+            global mean_clean_flux = deepcopy(spec.flux)
+            global mean_clean_var = deepcopy(spec.var)
+        else
+            mean_clean_flux .+= spec.flux
+            mean_clean_var .+= spec.var
+        end
+    end
     continuum = load(row.continuum_filename, "continuum")
     file_hashes[row.continuum_filename] = bytes2hex(sha256(row.continuum_filename))
     spec.flux ./= continuum
     spec.var ./= continuum.^2
+    if row.Filename ∈ df_files_cleanest.Filename
+        if size(mean_clean_flux_continuum_normalized,1) == 0
+            global mean_clean_flux_continuum_normalized = deepcopy(spec.flux)
+            global mean_clean_var_continuum_normalized = deepcopy(spec.var)
+        else
+            mean_clean_flux_continuum_normalized .+= spec.flux
+            mean_clean_var_continuum_normalized .+= spec.var
+        end
+    end
     push!(all_spectra,spec)
  end
  GC.gc()
@@ -355,12 +391,16 @@ println("# Saving results to ", daily_ccf_filename, ".")
     f["order_ccfs"] = order_ccfs
     f["order_ccf_vars"] = order_ccf_vars
     f["orders_to_use"] = orders_to_use
-    f["daily_ccf_filename"] = daily_ccf_filename
     f["manifest"] = df_files_use
     f["calc_order_ccf_args"] = args
-    f["file_hashes"] = file_hashes
+    f["mean_clean_flux"] = mean_clean_flux
+    f["mean_clean_var"] = mean_clean_var
+    f["mean_clean_flux_continuum_normalized"] = mean_clean_flux_continuum_normalized
+    f["mean_clean_var_continuum_normalized"] = mean_clean_var_continuum_normalized
     f["start_processing_time"] = start_processing_time
     f["stop_processing_time"] = stop_processing_time
+    f["daily_ccf_filename"] = daily_ccf_filename
+    f["file_hashes"] = file_hashes
   end
 
 
