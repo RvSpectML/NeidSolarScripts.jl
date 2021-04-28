@@ -7,9 +7,9 @@ module Continuum
 
 # constants
 speed_of_light_mks = 3e8 # m/s
-fwhm_sol = 7.3e3 # m/s
+fwhm_sol = 7.9e3 # m/s
 
- function calc_rolling_max(f::AV2; width::Integer = 10 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
+function calc_rolling_max(f::AV2; width::Integer = 10 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
  shift = floor(Int64,width//2)
  z = similar(f)
  #z[(shift):(length(f)-shift)] .= rollmax(f,width)
@@ -19,31 +19,48 @@ fwhm_sol = 7.3e3 # m/s
  return z
 end
 
-function calc_rolling_median_and_max_to_clip(λ::AV1, f::AV2; width::Integer = 10, cr_pad_width::Integer = 1,
-          verbose::Bool = false ) where { T1<:Real, T2<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2} }
+function calc_rolling_median(λ::AV1, f::AV2; width::Integer = 4, verbose::Bool = false ) where { T1<:Real, T2<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2} }
+  @assert length(λ) == length(f)
+  @assert width >= 2
+  @assert width%2 == 0
+  shift = floor(Int64,width//2)
+  f_filtered = similar(f)
+  if any(isnan.(f))
+     f_filtered .= running(NaNMath.median,f,width)
+  else
+     f_filtered[(1+shift):(length(f)-shift)] .= movsort(f, width, 0.5)
+     f_filtered[1:shift] .= f_filtered[1+shift]
+     f_filtered[(length(f)-shift+1):end] .= f_filtered[length(f)-shift]
+  end
+  return f_filtered
+end
+
+
+function calc_rolling_median_and_max_to_clip(λ::AV1, f::AV2; width::Integer = 8, cr_pad_width::Integer = 1,
+          num_clippings::Integer = 5, verbose::Bool = false ) where { T1<:Real, T2<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2} }
   @assert length(λ) == length(f)
   @assert width >= 4
   @assert width%2 == 0
   @assert 0<= cr_pad_width <= 7
+  @assert 1 <= num_clippings <= 10
   shift = floor(Int64,width//2)
-  p = (0.25, 0.5, 0.75, 0.95)
+  high_quantile = (length(λ) > 200) ? 0.99 : 0.95
+  p = (0.25, 0.5, 0.75, high_quantile)
   function iqr(mq::AVNT, i::Integer) where { T<:Real, NT<:NTuple{4,T}, AVNT<:AbstractVector{NT} }
       (mq[i][3]-mq[i][1])    # standard iqr
   end
   function iqr_upper(mq::AVNT, i::Integer) where { T<:Real, NT<:NTuple{4,T}, AVNT<:AbstractVector{NT} }
-      # moving_quartiles[i][3]-moving_quartiles[i][1]    # standard iqr
       2*(mq[i][3]-mq[i][2])  # double Q3-Q2
   end
-  #q2(mq::AVNT, i::Integer) where { T<:Real, NT<:NTuple{4,T}, AVNT<:AbstractVector{NT} } = mq[i][2]
   q75(mq::AVNT, i::Integer) where { T<:Real, NT<:NTuple{4,T}, AVNT<:AbstractVector{NT} } = mq[i][3]
-  q95(mq::AVNT, i::Integer) where { T<:Real, NT<:NTuple{4,T}, AVNT<:AbstractVector{NT} } = mq[i][4]
+  qhi(mq::AVNT, i::Integer) where { T<:Real, NT<:NTuple{4,T}, AVNT<:AbstractVector{NT} } = mq[i][4]
 
   output = similar(λ)
   mask = trues(length(λ))
   f_median_filtered = similar(f)
   f_clean = deepcopy(f)
-  num_clippings = 5
-  flush(stdout)
+
+  if verbose flush(stdout)  end
   for i in 1:num_clippings
      moving_quartiles = movsort(f_clean, width, p)
      f_median_filtered[(1+shift):(length(f)-shift)] .= map(i->moving_quartiles[i][2], (1+2*shift):length(moving_quartiles) )
@@ -53,18 +70,21 @@ function calc_rolling_median_and_max_to_clip(λ::AV1, f::AV2; width::Integer = 1
      idx = (1+2*shift):length(moving_quartiles)
      output[(1+shift):(length(f)-shift)] .= max_iqr[idx]
      #=
-     # Pass two with simple high quantile with wide window (to avoid being affected by lines)
-     width = 100  # TODO: Automate for orders.  FOr now arbtrary rather than 100A, while testing on small chunks
-     shift = floor(Int64,width//2)
-     max_99 = movsort(f, width, 0.98)  # TODO Replace with 0.99 after expand window
+     # Rassine uses a second pass with simple high quantile with a wider window (to avoid being affected by lines).
+     # For now we use the same window
+     width_pass2 = 100  # TODO: Automate for orders.  FOr now arbtrary rather than 100A, while testing on small chunks
+     shift_pass2 = floor(Int64,width_pass2//2)
+     max_99 = movsort(f, width_pass2, 0.99)
      output[(1+shift):(length(f)-shift)] .= max.(output[idx]),max_99[idx])
      =#
-     output[(1+shift):(length(f)-shift)] .= max.(output[idx],map(i->q95(moving_quartiles,i),idx))
+     #output[(1+shift):(length(f)-shift)] .= max.(output[idx],map(i->qhi(moving_quartiles,i),idx))
+     output[(1+shift):(length(f)-shift)] .= map(i->max(output[i],qhi(moving_quartiles,i)),idx)
 
      # Fill in edges
      output[1:shift] .= output[1+shift]
      output[(length(f)-shift+1):end] .= output[length(f)-shift]
-     # Identify & replace high outliers
+
+     # Identify & replace high outliers, plus neighboring pixels
      for i in 1:length(mask)
        if f[i] <= output[i] continue end
        for j in max(1,i-cr_pad_width):min(i+cr_pad_width,length(mask))
@@ -75,7 +95,7 @@ function calc_rolling_median_and_max_to_clip(λ::AV1, f::AV2; width::Integer = 1
      if verbose println("# pass ", i, ", removing ", sum((f.>output)), " hi pixels for a total of ", sum(.!mask), ".") end
      f_clean[.!mask] .= f_median_filtered[.!mask]
   end
-  return (f_median_filtered, output, f_clean)
+  return (f_filtered=f_median_filtered, f_threshold=output, f_clean=f_clean)
 end
 
 
@@ -137,7 +157,7 @@ function calc_continuum_anchors(λ::AV1, f::AV2; radius::AV3,
   #return distance
   =#
   # v4
-  function calc_dist(i::Integer, j::Integer)  # TODO OPT: reliminate sqrt
+  function calc_dist(i::Integer, j::Integer)  # TODO OPT: eliminate sqrt
     if λ[i]<=λ[j]
       return 0.0
     else
@@ -211,22 +231,7 @@ function calc_continuum_anchors(λ::AV1, f::AV2; radius::AV3,
     push!(keep,j)
   end
   if verbose println("# using ", length(keep), " anchor points") end
-  #=
-  interp_cubic = CubicSpline(f[keep],λ[keep])
-  interp_linear = LinearInterpolation(f[keep],λ[keep])
-  function extrap(x::Real)
-    if x<first(interp_linear.t)
-      return first(interp_linear.u)
-    elseif x>last(interp_linear.t)
-      return last(interp_linear.u)
-    else
-      return interp_linear(x)
-    end
-  end
-  =#
-  #  return (anchors = keep, continuum=interp_cubic.(λ))
   return keep
-  #return (anchors = keep, continuum=extrap.(λ))
 end
 
 function calc_continuum_from_anchors( λ::AV1, f::AV2, anchors::AV3,
@@ -243,7 +248,6 @@ function calc_continuum_from_anchors( λ::AV1, f::AV2, anchors::AV3,
       return interp_linear(x)
     end
   end
-  #  return (anchors = keep, continuum=interp_cubic.(λ))
   return extrap.(λ)
 end
 
@@ -255,7 +259,7 @@ function replace_edge_anchor_vals!(f::AV1, n::Integer = 3 ) where { T1<:Real, AV
   return f
 end
 
-function find_clean_anchors_by_slope(anchors::AV1, f::AV2; threshold::Real = 0.95, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3} }
+function find_clean_anchors_by_slope(anchors::AV1, f::AV2; threshold::Real = 0.995, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3} }
   nanchors = length(anchors)
   @assert nanchors == length(f)
   @assert nanchors >= 8
@@ -265,7 +269,7 @@ function find_clean_anchors_by_slope(anchors::AV1, f::AV2; threshold::Real = 0.9
     slope_lo = (f[i]-f[i-1])/(anchors[i]-anchors[i-1])
     Δabsslope[i] = abs(slope_hi)-abs(slope_lo)
   end
-  threshold = quantile(Δabsslope[2:end-1],0.995)  # TODO: Update to 99.5% once have large enough dataset
+  threshold = quantile(Δabsslope[2:end-1],threshold)
   mask = Δabsslope.<threshold
   return mask
 end
@@ -274,7 +278,7 @@ function merge_nearby_anchors(anchors::AV1, λ::AV2; threshold::Real = 1, verbos
   Δλ = λ[anchors[2:end]] .- λ[anchors[1:end-1]]
   close_anchor_idx = (1:(length(anchors)-1))[Δλ .<= threshold]
   nclose = length(close_anchor_idx)
-  if verbose println("# Found ", nclose, " close anchors.")  end
+  if verbose println("# Found ", nclose, " close anchors out of ", length(anchors), ".")  end
   if nclose == 0
     return anchors
   end
@@ -300,41 +304,34 @@ function merge_nearby_anchors(anchors::AV1, λ::AV2; threshold::Real = 1, verbos
   end
   if idx_start != nclose
     idx_stop = nclose
-    #println("# start = ", idx_start, " stop = ", idx_stop, " anchors_idx = ", close_anchor_idx[idx_start:idx_stop])
     if idx_start == idx_stop
       merged_anchor_idx = idx_start
-      #merged_anchor = close_anchor_idx[idx_start]
     elseif (idx_stop-idx_stop)%2 == 0
       merged_anchor_idx = idx_start + floor(Int64,(idx_stop-idx_start)//2)
-      #merged_anchor = anchors[close_anchor_idx[merged_anchor_idx]]
-      #println("# 1 start = ", idx_start, " stop = ", idx_stop, " mid = ", merged_anchor_idx)
-      #println("# 2 start = ", close_anchor_idx[idx_start], " stop = ", close_anchor_idx[idx_stop], " mid = ",  close_anchor_idx[merged_anchor_idx] )
-      #println("# 3 start = ", λ[close_anchor_idx[idx_start]], " stop = ", λ[close_anchor_idx[idx_stop]], " mid = ",  λ[close_anchor_idx[merged_anchor_idx]] )
     else
       merged_anchor_idx = idx_start + floor(Int64,(idx_stop-idx_start+1)//2)
-      #merged_anchor = anchors[close_anchor_idx[merged_anchor_idx]]
-      #println("# 1 start = ", idx_start, " stop = ", idx_stop, " mid = ", merged_anchor_idx)
-      #println("# 2 start = ", close_anchor_idx[idx_start], " stop = ", close_anchor_idx[idx_stop], " mid = ",  close_anchor_idx[merged_anchor_idx] )
-      #println("# 3 start = ", λ[close_anchor_idx[idx_start]], " stop = ", λ[close_anchor_idx[idx_stop]], " mid = ",  λ[close_anchor_idx[merged_anchor_idx]] )
     end
     merged_anchor = anchors[close_anchor_idx[merged_anchor_idx]]
     push!(new_anchors,merged_anchor)
   end
+  if verbose println("# Keeping ", length(new_anchors), " anchors.")  end
   return new_anchors
 end
 
-function calc_continuum(λ::AV1, f_obs::AV2; fwhm::Real = fwhm_sol ) where { T1<:Real, T2<:Real, T3<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3} }
+function calc_continuum(λ::AV1, f_obs::AV2; fwhm::Real = fwhm_sol,
+  stretch_factor::Real = 1.0, merging_threshold::Real = 0.04, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3} }
  clip_width_A = 1.0
  clip_width_pix = 2*floor(Int64,clip_width_A/(λ[2]-λ[1])/2)
- (f_median_filtered, f_clip_threshold, f_clean) = calc_rolling_median_and_max_to_clip(λ,f_obs, width=clip_width_pix)
+ (f_median_filtered, f_clip_threshold, f_clean) = calc_rolling_median_and_max_to_clip(λ,f_obs, width=clip_width_pix, verbose=verbose)
  rollingpin_radius = calc_rollingpin_radius(λ, f_median_filtered, fwhm=fwhm)
- anch_orig = calc_continuum_anchors(λ,f_median_filtered,radius=rollingpin_radius, stretch_factor=4.0)
+ anch_orig = calc_continuum_anchors(λ,f_median_filtered,radius=rollingpin_radius, stretch_factor=stretch_factor, verbose=verbose)
  anchor_vals = f_median_filtered[anch_orig]
  replace_edge_anchor_vals!(anchor_vals)
- anch_mask = find_clean_anchors_by_slope(anch_orig,anchor_vals)
- anchors_merged = merge_nearby_anchors(anch_orig[anch_mask],λ, threshold=0.04)
+ anch_mask = find_clean_anchors_by_slope(anch_orig,anchor_vals, verbose=verbose)
+ anchors_merged = merge_nearby_anchors(anch_orig[anch_mask],λ, threshold=merging_threshold, verbose=verbose)
+ #f_median_filtered = calc_rolling_median(λ,f_obs, width=4)
  continuum = calc_continuum_from_anchors(λ,f_median_filtered,anchors_merged)
- return (anchors_merged, continuum, f_median_filtered)
+ return (anchors=anchors_merged, continuum=continuum, f_filtered=f_median_filtered)
 end
 
 end # module Continuum
