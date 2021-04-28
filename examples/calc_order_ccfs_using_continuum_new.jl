@@ -154,8 +154,11 @@ if verbose   println("# Loading other packages 2/2")    end
  # Filename arguments
  @assert isfile(args["manifest"]) || islink(args["manifest"])
  manifest_filename = args["manifest"]
- args["overwrite"] = true
- @assert !isfile(args["output"]) || filesize(args["output"]) == 0 || args["overwrite"] == true
+ #args["overwrite"] = true
+ if isfile(args["output"]) && !args["overwrite"] 
+    error("# Output file " * args["output"] * " already exists (size = " * string(filesize(args["output"])) * " ).")
+ end
+ @assert !isfile(args["output"]) || args["overwrite"] == true
  @assert match(r"\.jld2$",args["output"]) != nothing
  daily_ccf_filename = args["output"]
  touch(daily_ccf_filename)
@@ -184,7 +187,7 @@ if verbose   println("# Loading other packages 2/2")    end
  if args["orders_to_use"] != nothing && length(args["orders_to_use"]) == 2
      orders_to_use = first(args["orders_to_use"]):last(args["orders_to_use"])
  elseif !@isdefined orders_to_use
-     orders_to_use = [ first(orders_to_use_default(NEID2D())), last(orders_to_use_default(NEID2D())) ]
+     orders_to_use = first(orders_to_use_default(NEID2D())):last(orders_to_use_default(NEID2D())) 
  end
  @assert min_order(NEID2D()) <= first(orders_to_use) <= max_order(NEID2D())
  @assert min_order(NEID2D()) <= last(orders_to_use) <= max_order(NEID2D())
@@ -268,7 +271,7 @@ if verbose println("# Reading manifest of files to process.")  end
     @filter( args["start_time"] == nothing || Time(julian2datetime(_.bjd)) >= start_time ) |>
     @filter( args["stop_time"] == nothing || Time(julian2datetime(_.bjd)) <= stop_time ) |> # TODO for other instruments may need to deal wtih cross end of 24 UTC
     @filter( args["min_snr_factor"] == nothing || sum(_.order_snrs) >= args["min_snr_factor"] * max_snr ) |>
-    @take(args["max_num_spectra"] ) |> @orderby(-_.bjd) |>
+    @take(args["max_num_spectra"] ) |> @orderby(_.bjd) |>
     DataFrame
   println("# Found ", size(df_files_use,1), " files of ",  size(df_files,1), " to process.")
   @assert size(df_files_use,1) >= 1
@@ -336,11 +339,12 @@ line_width = line_width_50_default
  #max_orders = min_order(NEID2D()):max_order(NEID2D())
  #good_orders = orders_to_use_default(NEID2D())
  #orders_to_use = max_orders
- if isfile(line_list_filename) && !args["recompute_line_weights"]
+ if isfile(line_list_filename) && !args["recompute_line_weights"] && false # TODO: why isn't --recompute-line-weights working?
    println("# Reading ", line_list_filename)
    line_list_espresso = CSV.read(line_list_filename, DataFrame)
    dont_need_to!(pipeline_plan,:clean_line_list_tellurics)
  else
+    #=
     println("# Can't find ", line_list_filename, ".  Trying ESPRESSO line list.")
     #orders_to_use = good_orders
     #order_list_timeseries = extract_orders(all_spectra,pipeline_plan, orders_to_use=orders_to_use, recalc=true )
@@ -349,8 +353,11 @@ line_width = line_width_50_default
     linelist_for_ccf_fn_w_path = joinpath(pkgdir(EchelleCCFs),"data","masks",line_list_filename)
     line_list_espresso = prepare_line_list(linelist_for_ccf_fn_w_path, all_spectra, pipeline_plan, v_center_to_avoid_tellurics=ccf_mid_velocity,
        Δv_to_avoid_tellurics = 2*max_bc+range_no_mask_change*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID2D()), orders_to_use=orders_to_use, recalc=true, verbose=true)
-
     #CSV.write(custom_line_list_filename, line_list_espresso)
+    =#
+    line_list_espresso = prepare_line_list(line_list_filename, all_spectra, pipeline_plan, v_center_to_avoid_tellurics=ccf_mid_velocity,
+       Δv_to_avoid_tellurics = 2*max_bc+range_no_mask_change*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID2D()), orders_to_use=orders_to_use, recalc=true, verbose=true)
+    
  end
  file_hashes[line_list_filename] = bytes2hex(sha256(line_list_filename))
  #outputs["line_list_espresso"] = line_list_espresso
