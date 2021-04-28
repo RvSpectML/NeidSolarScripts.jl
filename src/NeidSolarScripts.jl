@@ -3,7 +3,7 @@
 module NeidSolarScripts
 #using PyCall
 
-#= 
+#=
 function __init__()
   pyimport("astropy")
 end
@@ -22,7 +22,9 @@ export CalculateFWHMDifference_SolarRotation_from_long_lat_alt, CalculateFWHMDif
 include("diff_solar_extinction.jl")
 export DifferentialExtinction
 
-include("continuum.jl")
+#include("continuum_AFS.jl")
+#export Continuum_AFS
+include("continuum_rassine_like.jl")
 export Continuum
 
 end

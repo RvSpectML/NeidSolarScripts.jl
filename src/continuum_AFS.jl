@@ -1,4 +1,4 @@
-module Continuum
+module ContinuumAFS
 
 using RCall
 using RvSpectMLBase
