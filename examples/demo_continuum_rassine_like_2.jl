@@ -1,29 +1,141 @@
-using NeidSolarScripts
- using RvSpectMLBase
- using EchelleInstruments
- using JLD2, FileIO
- using ArgParse
+using NeidSolarScripts    # For continuum, solar rotaiton, differential rotation,...
+ using RvSpectMLBase      # For spectra data structures
+ using EchelleInstruments # For reading spectra
+ using JLD2, FileIO       # For outputs
+ using ArgParse           # For command line arguments
+
+ # using CSV, DataFrames, Query, Dates, SHA
+ #=
+ println("# Parsing arguments...")
+    function parse_commandline()
+      s = ArgParseSettings( description = "Calculate continuum normalization from NEID L1 FITS files.")
+      add_arg_group!(s, "Files", :argg_files)
+      @add_arg_table! s begin
+          "manifest"
+              help = "Manifest file (CVS) containing FITS files to analyze.\nExpects columns named Filename, bjd, and target."
+              arg_type = String
+              default = "manifest.csv"
+              #required = true
+          "output"
+              help = "Filename for output CCFs (jld2)"
+              arg_type = String
+              default = "daily_ccfs.jld2"
+          "--overwrite"
+             help = "Specify it's ok to overwrite the output file."
+             action = :store_true
+       end
+       add_arg_group!(s, "Normalization parameters", :argg_norm_param)
+       @add_arg_table! s begin
+         "--orders_to_use"
+            help = "First and last order _index_ to compute CCFs for"
+            nargs = 2
+            arg_type = Int64
+            #default = [ min_order(NEID2D()), max_order(NEID2D()) ]
+            #default = [ first(orders_to_use_default(NEID2D())), last(orders_to_use_default(NEID2D())) ]
+       end
+       add_arg_group!(s, "Filter manifest for ", :argg_filter_param)
+       @add_arg_table! s begin
+          "--target"
+             help = "Target field"
+             arg_type = String
+             default = "Sun"
+          "--datestr"
+             help = "Filenames that contain date string."
+             arg_type = String
+         "--max_solar_hour_angle"
+            help = "Maximum absolute value of solar hour angle."
+            arg_type = Float64
+            default = 6.0
+          "--max_airmass"
+             help = "Maximum airmass."
+             arg_type = Float64
+             #default = 10.0
+          "--min_snr_factor"
+             help = "Minimum SNR relative to max_snr."
+             arg_type = Float64
+             #default = 0.0
+          "--max_snr"
+             help = "Specify max_snr manually."
+             arg_type = Float64
+          "--start_time"
+             help = "Specify daily start time for CCFs to be processed (HH MM)"
+             nargs = 2
+             arg_type = Int64
+             #default = [ min_order(NEID2D()), max_order(NEID2D()) ]
+             default = [0, 0]
+         "--stop_time"
+            help = "Specify daily stop time for CCFs to be processed (HH MM)"
+            nargs = 2
+            arg_type = Int64
+            #default = [ min_order(NEID2D()), max_order(NEID2D()) ]
+            default = [23, 59]
+          "--max_num_spectra"
+             help = "Maximum number of spectra to process."
+             arg_type = Int
+             default = 250
+       end
+
+      return parse_args(s)
+  end
+  args = parse_commandline()
+  =#
+
+sed_path = "/home/eford/Code/RvSpectMLEcoSystem/NeidSolarScripts/data"
+   sed = Continuum.read_master_sed_neid(path=sed_path)
 
 fits_path = "/mnt/data_simons/NEID/DRPv0.7-fixedflatfielding2/"
- fits_fn = "neidL1_20210104T182500.fits"
- continuum_afs_path = joinpath(fits_path,"output","continuum")
- continuum_afs_fn = "neidL1_20210104T182500_continuum=afs.jld2"
- continuum_ras_path = joinpath(fits_path,"output","continuum")
- continuum_ras_fn = "neidL1_20210104T182500_continuum=ras1.jld2"
- write_output = true
- spec = NEID.read_data(joinpath(fits_path,fits_fn))
- min_order_for_continuum = min_order(NEID2D())
- max_order_for_continuum = max_order(NEID2D())
- orders_to_use = min_order_for_continuum:max_order_for_continuum
+   fits_fn = "neidL1_20210104T182500.fits"
+   continuum_afs_path = joinpath(fits_path,"output","continuum")
+
+   continuum_afs_fn = "neidL1_20210104T182500_continuum=afs.jld2"
+   continuum_ras_path = joinpath(fits_path,"output","continuum")
+   continuum_ras_fn = "neidL1_20210104T182500_continuum=ras1.jld2"
+   write_output = false
+   spec = NEID.read_data(joinpath(fits_path,fits_fn))
+
+min_order_for_continuum = min_order(NEID2D())
+  max_order_for_continuum = max_order(NEID2D())
+  orders_to_use = min_order_for_continuum:max_order_for_continuum
+  (f_norm, var_norm) = Continuum.normalize_by_sed(spec.λ,spec.flux,spec.var, sed; orders_to_use=orders_to_use)
+
+using Plots
+order_idx = 110
+ plt = scatter(spec.λ[:,order_idx],f_norm[:,order_idx],ms=1.5,legend=:none)
+ #plot!(plt, lambda,poly, color=:blue, lw=2)
+ #plt = scatter(lambda,f_obs./(sed_view.*coeff.(lambda)),ms=1.5,legend=:none)
+ #plt
+#savefig("fig.png")
+ ylims!(0.,2.0)
+true
+
+
  function get_pixel_range_for_continuum(λ::AA1, ord_idx::Integer) where { T1<:Real, AA1<:AbstractArray{T1,2} }
    inst = get_inst(spec)
    pix = min_pixel_in_order(get_inst(spec)):max_pixel_in_order(get_inst(spec))
  end
- spec
+ #f_norm = spec.flux ./sed
+ #xlabel!("λ")
+ #ylabel!("Flux/SED")
+ #savefig("fig.png")
 
- @time (anchors, continuum_output, f_filtered) = Continuum.calc_continuum(spec.λ,spec.flux,stretch_factor=5.0, ν=1.0,
+#f_norm = spec.flux
+@time (anchors, continuum_output, f_filtered) = Continuum.calc_continuum(spec.λ,f_norm,var_norm,stretch_factor=5.0, ν=1.0,
                merging_threshold=0.25, orders_to_use=orders_to_use, get_pixel_range=get_pixel_range_for_continuum,
-               verbose=true)
+               verbose=false)
+
+
+order_idx = 90
+  lambda_obs = view(spec.λ,:,order_idx)
+  f_obs = view(f_norm,:,order_idx)
+  var_obs = view(var_norm,:,order_idx)
+  (anchors, continuum, f_filtered_internal) = Continuum.calc_continuum(lambda_obs,f_obs,var_obs,
+       stretch_factor=5.0, ν=1.0, merging_threshold=0.25,  min_R_factor = 100.0, smoothing_half_width = 40, verbose=false)
+  f_filtered = f_filtered_internal
+  scatter(lambda_obs,f_obs, color=:black, ms=2, legend=:none)
+  plot!(lambda_obs,f_filtered,color=:black)
+  plot!(lambda_obs,continuum,color=:cyan)
+  scatter!(lambda_obs[anchors], f_filtered[anchors], color=:blue, ms=4)
+
 
 if write_output
   jldopen(continuum_ras_fn, "w") do file
@@ -38,36 +150,39 @@ end
 
 
 
-#=
-
 using Plots
-order_idx =
+order_idx = 50
  println("# Order Index: ", order_idx)
- lambda = spec.λ[:,order_idx]
- f_obs = spec.flux[:,order_idx]
- findall(isnan.(f_obs))
-
-  (anchors, continuum, f_filtered_internal) = Continuum.calc_continuum(lambda,f_obs,
-      stretch_factor=10.0, ν=1.0, merging_threshold=0.25, smoothing_half_width = 40, verbose=false)
+ lambda_obs = view(spec.λ,:,order_idx)
+ f_obs = view(f_norm,:,order_idx)
+ var_obs = view(var_norm,:,order_idx)
+ (anchors, continuum, f_filtered_internal) = Continuum.calc_continuum(lambda_obs,f_obs,var_obs,
+      stretch_factor=10.0, ν=1.0, merging_threshold=0.25, smoothing_half_width = 40, min_R_factor = 200.0, verbose=false)
   f_filtered = f_filtered_internal
+  println(" size(anchors) = ", size(anchors), " size(continuum) = ", size(continuum), " size(f_filtered) = ", size(f_filtered) )
 
-  lambda_plt = lambda
-  #f_filtered = Continuum.calc_rolling_median(lambda,f_obs, width=4)
-  scatter(lambda,f_obs, color=:black, ms=2, legend=:none)
-  #plot!(lambda_plt,f_smooth,color=:cyan)
-  plot!(lambda_plt,f_filtered,color=:black)
-  plot!(lambda,continuum,color=:cyan)
-  scatter!(lambda[anchors], f_filtered[anchors], color=:blue, ms=4)
-  (anchors2, continuum2, f_filtered_internal2) = Continuum.calc_continuum(lambda,f_obs,
+  #plt = scatter(lambda_obs,f_obs, color=:black, ms=2, legend=:none)
+  plot!(plt,lambda_obs,f_filtered,color=:black)
+  plot!(plt,lambda_obs,continuum,color=:cyan)
+  #=
+  if length(anchors) >=1
+    scatter!(plt,lambda_obs[anchors], f_filtered[anchors], color=:blue, ms=4)
+  end
+  plt
+  =#
+  #=
+  (anchors2, continuum2, f_filtered_internal2) = Continuum.calc_continuum(lambda,f_norm[:,order_idx],
        stretch_factor=5.0, ν=1.0, merging_threshold=0.25, smoothing_half_width = 40, verbose=false)
   println("# num_anchors1 = ", length(anchors), "  num_anchors2 = ", length(anchors2))
   plot!(lambda,continuum2,color=:magenta)
-  scatter!(lambda[anchors2], f_filtered[anchors2], color=:red, ms=4)
+  scatter!(lambda[anchors2], f_filtered_internal2[anchors2], color=:red, ms=4)
+  =#
 
 xmin = first(lambda)-0.05; xmax = xmin+20;
  xlims!(xmin,xmax)
  idx_pix = searchsortedfirst(lambda,xmin):searchsortedlast(lambda,xmax)
  ylims!(NaNMath.extrema(f_obs[idx_pix]))
+
 
 xmax = last(lambda)+0.05; xmin = xmax-20;
   xlims!(xmin,xmax)
