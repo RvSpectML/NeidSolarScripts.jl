@@ -3,22 +3,15 @@ module Continuum
  using Statistics
  using DSP
  using DataInterpolations
- using SortFilters, RollingFunctions, NaNMath
- #https://github.com/sairus7/SortFilters.jl
+ using RollingFunctions, NaNMath
+ #using SortFilters  # For rolling IQR in calc_rolling_median_and_max_to_clip.  https://github.com/sairus7/SortFilters.jl
 
 # constants
 speed_of_light_mks = 3e8 # m/s
 fwhm_sol = 7.9e3 # m/s
 
-function replace_nans!(f::AV2; half_width::Integer = 6 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
-  idx_nan = findall(isnan.(f))
-  for i in idx_nan
-  end
-
-
-end
-
 function smooth(f::AV2; half_width::Integer = 6 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
+  #println("# size(f) to smooth: ", size(f))
   w=DSP.hanning(1+2*half_width)
   if 1+2*half_width<3
     return f
@@ -30,12 +23,13 @@ function smooth(f::AV2; half_width::Integer = 6 ) where {  T2<:Real, AV2<:Abstra
 end
 
 function calc_rolling_max(f::AV2; width::Integer = 14 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
- shift = floor(Int64,width//2)
+ shift = max(1,floor(Int64,width//2))
+ #println(" size(f) = ",size(f), " width= ", width, " shift = ", shift)
  z = similar(f)
  #z[(shift):(length(f)-shift)] .= rollmax(f,width)
- z[(shift):(length(f)-shift)] .= rolling(NaNMath.maximum,f,width)
+ z[shift:(end-shift)] .= rolling(NaNMath.maximum,f,width)
  z[1:shift-1] .= z[shift]
- z[(length(f)-shift+1):end] .= z[length(f)-shift]
+ z[(end-shift+1):end] .= z[end-shift]
  return z
 end
 
@@ -61,6 +55,7 @@ function calc_rolling_median(λ::AV1, f::AV2; width::Integer = 4, verbose::Bool 
 end
 
 
+#=
 function calc_rolling_median_and_max_to_clip(λ::AV1, f::AV2; width::Integer = 8, cr_pad_width::Integer = 1,
           num_clippings::Integer = 3, verbose::Bool = false ) where { T1<:Real, T2<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2} }
   @assert length(λ) == length(f)
@@ -122,6 +117,7 @@ function calc_rolling_median_and_max_to_clip(λ::AV1, f::AV2; width::Integer = 8
   end
   return (f_filtered=f_median_filtered, f_threshold=output, f_clean=f_clean)
 end
+=#
 
 function longest_cluster_same_sign(y::AV) where { T<:Real, AV<:AbstractVector{T} }
   longest = 0
@@ -158,8 +154,8 @@ function calc_rollingpin_radius(λ::AV1, f::AV2; fwhm::Real = fwhm_sol,
             min_R_factor::Real = 100, ν::Real = 1, verbose::Bool = false ) where { T1<:Real, AV1<:AbstractVector{T1}, T2<:Real, AV2<:AbstractVector{T2}  }
    λlo = minimum(λ)
    S1_width = S1_width_factor*fwhm/speed_of_light_mks*λlo
+   S1_width = min(2*floor(Int64,S1_width/2),2)
    S2_width = S2_width_factor*S1_width
-   S1_width = 2*floor(Int64,S1_width/2)
    S2_width = 2*floor(Int64,S2_width/2)
    f_max1 = calc_rolling_max(f,width=S1_width)
    f_max2 = calc_rolling_max(f,width=S2_width)
@@ -277,9 +273,15 @@ function calc_continuum_anchors(λ::AV1, f::AV2; radius::AV3,
     argmintheta = 0
     for i in 1:length(cy)
       if cy[i]-p1[2] >0
-        thetai = -acos((cx[i]-p1[1])/par_R)+π
+        acos_arg = (cx[i]-p1[1])/par_R
+        if acos_arg > 1.0 acos_arg = 1.0
+        elseif  acos_arg < -1.0 acos_arg = -1.0  end
+        thetai = -acos(acos_arg)+π
       else
-        thetai = -asin((cy[i]-p1[2])/par_R)+π
+        asin_arg = (cy[i]-p1[2])/par_R
+        if asin_arg > 1.0 asin_arg = 1.0
+        elseif  asin_arg < -1.0 asin_arg = -1.0  end
+        thetai = -asin(asin_arg)+π
       end
       if thetai < mintheta
         mintheta = thetai
@@ -300,19 +302,20 @@ end
 function calc_continuum_from_anchors( λ::AV1, f::AV2, anchors::AV3; λout::AV4 = λ,
               verbose::Bool = false ) where {
                 T1<:Real, T2<:Real, T3<:Integer, T4<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}  }
-  calc_continuum_from_anchors_cubic( λ, f, anchors, λout=λout,verbose=verbose)
+  calc_continuum_from_anchors_hybrid( λ, f, anchors, λout=λout,verbose=verbose)
 end
 
 function calc_continuum_from_anchors_linear( λ::AV1, f::AV2, anchors::AV3; λout::AV4 = λ,
               verbose::Bool = false ) where {
                 T1<:Real, T2<:Real, T3<:Integer, T4<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}  }
-  #interp_cubic = CubicSpline(f[anchors],λ[anchors])
   interp_linear = LinearInterpolation(f[anchors],λ[anchors])
   function extrap(x::Real)
     if x<first(interp_linear.t)
-      return first(interp_linear.u)
+      slope = (interp_linear.u[2]-interp_linear.u[1])/(interp_linear.t[2]-interp_linear.t[1])
+      return first(interp_linear.u)+(x-interp_linear.t[1])*slope
     elseif x>last(interp_linear.t)
-      return last(interp_linear.u)
+      slope = (interp_linear.u[end]-interp_linear.u[end-1])/(interp_linear.t[end]-interp_linear.t[end-1])
+      return last(interp_linear.u)+(x-interp_linear.t[end])*slope
     else
       return interp_linear(x)
     end
@@ -325,19 +328,27 @@ function calc_continuum_from_anchors_cubic( λ::AV1, f::AV2, anchors::AV3; λout
                 T1<:Real, T2<:Real, T3<:Integer, T4<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}  }
   interp_cubic = CubicSpline(f[anchors],λ[anchors])
   interp_cubic.(λout)
-  #=
-  interp_linear = LinearInterpolation(f[anchors],λ[anchors])
-  function extrap(x::Real)
-    if x<first(interp_linear.t)
-      return first(interp_linear.u)
-    elseif x>last(interp_linear.t)
-      return last(interp_linear.u)
-    else
-      return interp_linear(x)
-    end
+end
+
+
+function calc_continuum_from_anchors_hybrid( λ::AV1, f::AV2, anchors::AV3; λout::AV4 = λ,
+              verbose::Bool = false ) where {
+                T1<:Real, T2<:Real, T3<:Integer, T4<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}  }
+  output = similar(λout)
+  if length(anchors) < 9
+    output .= calc_continuum_from_anchors_linear( λ, f, anchors, λout=λout,verbose=verbose)
+  else
+    λmin = λ[anchors[4]]
+    λmax = λ[anchors[end-3]]
+    idx_pix_cubic = searchsortedfirst(λout,λmin):searchsortedlast(λout,λmax)
+    output[idx_pix_cubic] .= calc_continuum_from_anchors_cubic( λ, f, anchors, λout=λout[idx_pix_cubic],verbose=verbose)
+    idx_pix_linear1 = 1:first(idx_pix_cubic)
+    idx_pix_linear2 = last(idx_pix_cubic):length(λout)
+    idx_pix_linear = vcat(idx_pix_linear1,idx_pix_linear2)
+    if verbose println("# idx_pix_linear = ", idx_pix_linear, " \n # λ_linear = ", λout[idx_pix_linear]) end
+    output[idx_pix_linear] .= calc_continuum_from_anchors_linear( λ, f, anchors, λout=λout[idx_pix_linear],verbose=verbose)
   end
-  return extrap.(λout)
-  =#
+  return output
 end
 
 function replace_edge_anchor_vals!(f::AV1, n::Integer = 3 ) where { T1<:Real, AV1<:AbstractVector{T1} }
@@ -387,8 +398,10 @@ function merge_nearby_anchors(anchors::AV1, λ::AV2; threshold::Real = 1, verbos
   if nclose == 0
     return anchors
   else
-    println("# Anchors = ", anchors)
-    println("Close anchor pairs: ", findall(close_anchor_pair_mask), " => ", anchors[findall(close_anchor_pair_mask)])
+    if verbose
+      println("# Anchors = ", anchors)
+      println("Close anchor pairs: ", findall(close_anchor_pair_mask), " => ", anchors[findall(close_anchor_pair_mask)])
+    end
   end
   old_anchor_mask = falses(length(anchors))
   if first(Δλ) > threshold
@@ -403,7 +416,7 @@ function merge_nearby_anchors(anchors::AV1, λ::AV2; threshold::Real = 1, verbos
     old_anchor_mask[length(anchors)] = true
   end
   old_anchors = anchors[old_anchor_mask]
-  println("# Old anchors = ", old_anchors)
+  if verbose   println("# Old anchors = ", old_anchors)  end
   close_anchor_idx = (1:(length(anchors)-1))[close_anchor_pair_mask]
   new_anchors = zeros(Int64,nclose)
   resize!(new_anchors,0)
@@ -477,13 +490,14 @@ function merge_nearby_anchors(anchors::AV1, λ::AV2; threshold::Real = 1, verbos
 end
 
 function calc_continuum(λ::AV1, f_obs::AV2; λout::AV3 = λ, fwhm::Real = fwhm_sol, ν::Real =1.0,
-  stretch_factor::Real = 1.0, merging_threshold::Real = 0.04, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3} }
- clip_width_A = 1.0
- clip_width_pix = 2*floor(Int64,clip_width_A/(λ[2]-λ[1])/2)
- f_smooth = Continuum.smooth(f_obs, half_width=6)
- idx_local_maxima = find_local_maxima(f_smooth, half_width=7)
+  smoothing_half_width::Integer = 6, local_maximum_half_width::Integer = smoothing_half_width+1, stretch_factor::Real = 5.0, merging_threshold::Real = 0.25, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3} }
+ #clip_width_A = 1.0
+ #clip_width_pix = clip_width_A/(λ[2]-λ[1])
+ #@assert 1 <= clip_width_pix < Inf
+ #clip_width_pix = 2*floor(Int64,clip_width_pix/2)
+ f_smooth = Continuum.smooth(f_obs, half_width=smoothing_half_width)
+ idx_local_maxima = find_local_maxima(f_smooth, half_width=local_maximum_half_width)
  #(f_median_filtered, f_clip_threshold, f_clean) = calc_rolling_median_and_max_to_clip(λ,f_obs, width=clip_width_pix, verbose=verbose)
- #rollingpin_radius = calc_rollingpin_radius(λ, f_median_filtered, fwhm=fwhm)
  rollingpin_radius = calc_rollingpin_radius(λ, f_smooth, fwhm=fwhm, verbose=false, ν=ν)
 
  anch_orig = calc_continuum_anchors(λ[idx_local_maxima],f_smooth[idx_local_maxima],radius=rollingpin_radius[idx_local_maxima], stretch_factor=stretch_factor, verbose=verbose)
@@ -492,22 +506,44 @@ function calc_continuum(λ::AV1, f_obs::AV2; λout::AV3 = λ, fwhm::Real = fwhm_
  replace_edge_anchor_vals!(anchor_vals)
  anch_mask = find_clean_anchors_by_slope(anch_orig,anchor_vals, verbose=verbose)
  #anchors_merged = anch_orig[anch_mask]
- # #=
  if merging_threshold > 0
      anchors_merged = merge_nearby_anchors(anch_orig[anch_mask],λ, threshold=merging_threshold, verbose=verbose)
  else
     anchors_merged = anch_orig[anch_mask]
  end
- # =#
- #f_median_filtered = calc_rolling_median(λ,f_obs, width=4)
- if length(anchors_merged)>10
-   continuum = calc_continuum_from_anchors_cubic(λ,f_smooth,anchors_merged, λout=λout, verbose=verbose)
- else
-   continuum = calc_continuum_from_anchors_linear(λ,f_smooth,anchors_merged, λout=λout, verbose=verbose)
- end
+ continuum = calc_continuum_from_anchors_hybrid(λ,f_smooth,anchors_merged, λout=λout) # , verbose=verbose)
  return (anchors=anchors_merged, continuum=continuum, f_filtered=f_smooth)
 end
 
+function default_get_pixel_range(λ::AA1, ord_idx::Integer) where { T1<:Real, AA1<:AbstractArray{T1,2} }
+  return 1:size(λ,1)
+end
+
+function calc_continuum(λ::AA1, f_obs::AA2; λout::AA3 = λ, fwhm::Real = fwhm_sol, ν::Real =1.0,
+  stretch_factor::Real = 5.0, merging_threshold::Real = 0.25,
+        orders_to_use::AbstractVector{<:Integer} = 1:size(λ,2), get_pixel_range::Function = default_get_pixel_range, verbose::Bool = false ) where {
+        T1<:Real, T2<:Real, T3<:Real, AA1<:AbstractArray{T1,2}, AA2<:AbstractArray{T2,2}, AA3<:AbstractArray{T3,2} }
+  @assert size(λ) == size(f_obs)
+  @assert size(λout,2) == size(λout,2)
+  num_orders = size(λout,2)
+  anchors_2d = fill(Int64[],num_orders)
+  continuum_2d = fill(NaN,size(λout,1),size(λout,2))
+  f_filtered_2d = fill(NaN,size(λout,1),size(λout,2))
+  for ord_idx in orders_to_use
+    pix = get_pixel_range(λ,ord_idx)
+    λ_use = view(λ,pix,ord_idx)
+    f_obs_use = convert.(Float64,view(f_obs,pix,ord_idx))
+    if all(isnan.(λ_use)) || all(isnan.(f_obs_use))  continue   end
+    smoothing_half_width = NaNMath.mean(f_obs_use) > 100 ? 6 : 40
+    λout_use = view(λout,pix,ord_idx)
+    (anchors_1d, continuum_order_1d, f_filtered_1d) = Continuum.calc_continuum(λ_use,f_obs_use,λout=λout_use,
+         stretch_factor=stretch_factor, merging_threshold=merging_threshold, smoothing_half_width=smoothing_half_width, verbose=false)
+    anchors_2d[ord_idx] = anchors_1d
+    continuum_2d[pix,ord_idx] .= continuum_order_1d
+    f_filtered_2d[pix,ord_idx] .= f_filtered_1d
+  end
+  return (anchors=anchors_2d, continuum=continuum_2d, f_filtered=f_filtered_2d)
+end
 
 # Code for mergesorted from
 # https://discourse.julialang.org/t/looking-for-merge-algorithm/47473/2
