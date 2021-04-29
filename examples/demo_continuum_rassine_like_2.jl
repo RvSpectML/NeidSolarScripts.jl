@@ -1,4 +1,5 @@
 using NeidSolarScripts
+using RvSpectMLBase
 using EchelleInstruments
 
 fits_path = "/mnt/data_simons/NEID/DRPv0.7-fixedflatfielding2/"
@@ -8,27 +9,79 @@ continuum_afs_fn = "neidL1_20210104T182500_continuum=afs.jld2"
 
 spec = NEID.read_data(joinpath(fits_path,fits_fn))
 
-#using Plots
+using Plots
 
-order_idx = 60
+order_idx =3
+ println("# Order Index: ", order_idx)
  lambda = spec.λ[:,order_idx]
  f_obs = spec.flux[:,order_idx]
- (anchors, continuum, f_filtered_internal) = Continuum.calc_continuum(lambda,f_obs,
-      stretch_factor=0.5, merging_threshold=0.04, verbose=true)
+ findall(isnan.(f_obs))
+
+(anchors, continuum, f_filtered_internal) = Continuum.calc_continuum(lambda,f_obs,
+      stretch_factor=5.0, ν=1.0, merging_threshold=0.5, verbose=true)
   println("# num_anchors = ", length(anchors))
+ lambda_plt = lambda
  f_filtered = f_filtered_internal
  #f_filtered = Continuum.calc_rolling_median(lambda,f_obs, width=4)
  scatter(lambda,f_obs, color=:black, ms=2, legend=:none)
-  plot!(lambda,f_filtered,color=:cyan)
-  plot!(lambda,continuum,color=:magenta)
-  scatter!(lambda[anchors], f_filtered[anchors], color=:blue, ms=3)
-  #ylims!(0.95,1.15)
-  xmin = 5360
-  xmax = xmin+15
-  xlims!(xmin,xmax)
-  ylims!(extrema(f_filtered[xmin.<=lambda.<=xmax]))
+  #plot!(lambda_plt,f_smooth,color=:cyan)
+  plot!(lambda_plt,f_filtered,color=:black)
+  plot!(lambda,continuum,color=:cyan)
+  scatter!(lambda[anchors], f_filtered[anchors], color=:blue, ms=4)
+  (anchors2, continuum2, f_filtered_internal2) = Continuum.calc_continuum(lambda,f_obs,
+       stretch_factor=5.0, ν=1.0, merging_threshold=0.75, verbose=true)
+  plot!(lambda,continuum2,color=:magenta)
+  scatter!(lambda[anchors2], f_filtered[anchors2], color=:red, ms=4)
 
-plot(lambda, f_obs./continuum, legend=:none)
+  #xlims!(xmin,xmax)
+xlims!(5880,5915)
+xlims!(5350,5385)
+xlims!(5385,5400)
+
+
+
+
+
+
+
+
+
+xlims!(4950,4960)
+true
+
+  xlims!(5875,5905)
+  #ylims!(0.95,1.15)
+  #xmin = minimum(lambda_plt)
+  #xmax = minimum(lambda_plt)
+  #xlims!(xmin,xmax)
+  #ylims!(extrema(f_filtered[xmin.<=lambda.<=xmax]))
+
+
+
+
+
+
+
+#using Plots
+continuum = zeros(size(spec.flux))
+  #for order_idx in 4:118
+    order_idx =30
+    possible_pix = get_pixel_range(get_inst(spec),order_idx)
+    bad_pix = bad_col_ranges(get_inst(spec),order_idx)
+    pix_rng = EchelleInstruments.calc_complement_index_ranges(possible_pix,bad_pix)
+    pix = mapreduce(p->collect(p),vcat,pix_rng)
+    lambda = spec.λ[pix,order_idx]
+    f_obs = spec.flux[pix,order_idx]
+    (anchors, continuum_order, f_filtered) = Continuum.calc_continuum(lambda,f_obs,λout=spec.λ[possible_pix,order_idx],
+         stretch_factor=10.0, merging_threshold=1.0, verbose=true)
+    continuum[possible_pix,order_idx] .= continuum_order
+    lambda_plt = spec.λ[possible_pix,order_idx]
+    plot(lambda_plt,continuum_order)
+    scatter!(lambda[anchors], f_filtered[anchors], color=:blue, ms=4)
+  #end
+
+
+plot(lambda, spec.flux[:,order_idx]./continuum, legend=:none)
  xlabel!("λ")
  ylabel!("Flux (continuum-normalized)")
  ylims!(0.9,1.05)
