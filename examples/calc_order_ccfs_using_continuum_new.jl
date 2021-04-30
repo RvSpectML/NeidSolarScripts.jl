@@ -339,12 +339,12 @@ line_width = line_width_50_default
  #max_orders = min_order(NEID2D()):max_order(NEID2D())
  #good_orders = orders_to_use_default(NEID2D())
  #orders_to_use = max_orders
- if isfile(line_list_filename) && !args["recompute_line_weights"] && false # TODO: why isn't --recompute-line-weights working?
+ if isfile(line_list_filename) && !args["recompute_line_weights"]
    println("# Reading ", line_list_filename)
    line_list_espresso = CSV.read(line_list_filename, DataFrame)
+   @assert all(map(k->k ∈ names(line_list_espresso), ["lambda","weight","order"])
    dont_need_to!(pipeline_plan,:clean_line_list_tellurics)
  else
-    #=
     println("# Can't find ", line_list_filename, ".  Trying ESPRESSO line list.")
     #orders_to_use = good_orders
     #order_list_timeseries = extract_orders(all_spectra,pipeline_plan, orders_to_use=orders_to_use, recalc=true )
@@ -354,10 +354,6 @@ line_width = line_width_50_default
     line_list_espresso = prepare_line_list(linelist_for_ccf_fn_w_path, all_spectra, pipeline_plan, v_center_to_avoid_tellurics=ccf_mid_velocity,
        Δv_to_avoid_tellurics = 2*max_bc+range_no_mask_change*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID2D()), orders_to_use=orders_to_use, recalc=true, verbose=true)
     #CSV.write(custom_line_list_filename, line_list_espresso)
-    =#
-    line_list_espresso = prepare_line_list(line_list_filename, all_spectra, pipeline_plan, v_center_to_avoid_tellurics=ccf_mid_velocity,
-       Δv_to_avoid_tellurics = 2*max_bc+range_no_mask_change*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID2D()), orders_to_use=orders_to_use, recalc=true, verbose=true)
-    
  end
  file_hashes[line_list_filename] = bytes2hex(sha256(line_list_filename))
  #outputs["line_list_espresso"] = line_list_espresso
