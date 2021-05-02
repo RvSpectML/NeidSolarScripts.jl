@@ -1,7 +1,7 @@
 name = "NeidSolarScripts"
 uuid = "71cacfaf-3521-4e83-9e04-9e5e1461b034"
 authors = ["Eric Ford", "Shubham Kanodia", "Andrea Lin"]
-version = "0.0.3"
+version = "0.0.4"
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"

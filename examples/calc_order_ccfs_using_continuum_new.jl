@@ -362,8 +362,10 @@ pipeline_plan = PipelinePlan()
         println("# Couldn't find matching continuum file: ", row.continuum_filename)
         continue
     end
-    println("# Reading ", row.Filename, "(",i,"/",size(df_files,1),")")
-    flush(stdout)
+    if verbose
+        println("# Reading ", row.Filename, "(",i,"/",size(df_files,1),")")
+        flush(stdout)
+    end
     spec = NEID.read_data(row)
     file_hashes[row.Filename] = bytes2hex(sha256(row.Filename))
 
