@@ -1,4 +1,6 @@
 verbose = true
+ using Dates
+ if verbose println(now()) end
  if verbose && !isdefined(Main,:RvSpectML)  println("# Loading RvSpecML")    end
  using RvSpectMLBase
  using EchelleInstruments#, EchelleInstruments.NEID
@@ -6,38 +8,11 @@ verbose = true
  if verbose println("# Loading NeidSolarScripts")    end
  using NeidSolarScripts
  println("# Loading other packages 1/2")
- using Dates
  using ArgParse
 
 println("# Parsing arguments...")
    lsf_width = 3.0e3
    function parse_commandline()
-     #=
-     # Could try to read in the parameters file first to adjust default values.  But not implemented yet.
-     s_files_only = ArgParseSettings(add_help=false)
-     add_arg_group!(s_files_only, "Files", :argg_files)
-     @add_arg_table! s_files_only begin
-         "manifest"
-             help = "Manifest file (CVS) containing FITS files to analyze.\nExpects columns named Filename, bjd, target, and continuum_filename."
-             arg_type = String
-             default = "manifest.csv"
-             #required = true
-         "output"
-             help = "Filename for output CCFs (jld2)"
-             arg_type = String
-             default = "daily_ccfs.jld2"
-         "--param"
-             help = "Parameters file"
-             arg_type = String
-         "--overwrite"
-            help = "Specify it's ok to overwrite the output file."
-            action = :store_true
-      end
-     args_param = parse_args(s_files_only)
-     if args_param["param"] != nothing && isfile(args_param["param"])
-         include(args_param["param"])
-     end
-     =#
      s = ArgParseSettings( description = "Calculate order CCFs from NEID L1 FITS files.")
      #import_settings!(s, s_files_only, args_only=false)
      add_arg_group!(s, "Files", :argg_files)
@@ -100,6 +75,62 @@ println("# Parsing arguments...")
              help = "Force recalculation of SNR-based line weight factors."
              action = :store_true
       end
+      add_arg_group!(s, "Continuum normalization parameters", :argg_continuum_param)
+      @add_arg_table! s begin
+         "--sed_filename"
+             help = "Filename for input SED to normalize by"
+             arg_type = String
+             default = "/home/eford/Code/RvSpectMLEcoSystem/NeidSolarScripts/data/neidMaster_HR_SmoothLampSED_20210101.fits"
+         "--continuum_poly_half_width"
+             help = "Half width for window to use for smoothing prior to polynomial fit to continuum."
+             arg_type = Int64
+             default = 50
+         "--quantile_fit_continuum"
+             help = "Quantile of rolling window to use prior to polynomial fit to continuum."
+             arg_type = Float64
+             default = 0.9
+         "--order_poly_continuum"
+             help = "Order of polynomial to fit after dividing by SED proivded."
+             arg_type = Int64
+             default = 4
+        "--anchors_filename"
+             help = "Filename for anchor locations to use in computing continuum to normalize by."
+             arg_type = String
+             #default = "/home/eford/Code/RvSpectMLEcoSystem/NeidSolarScripts/data/neidMaster_HR_SmoothLampSED_20210101.fits"
+         "--smoothing_half_width"
+             help = "Half width for window to use for smoothing prior to findind local maximum."
+             arg_type = Int64
+             default = 6
+         "--stretch_factor"
+             help = "Stretch factor to use for scaling flux in distance calculation for rolling pin continuum normalization"
+             arg_type = Float64
+             default = 5.0
+         "--merging_threshold"
+             help = "Threshold (in λ units) for merging nearby continuum anchors."
+             arg_type = Float64
+             default = 0.25
+         "--fwhm_continuum"
+            help = "Full width half-max to use for performing continuum normalization."
+            arg_type = Float64
+            default = Continuum.fwhm_sol/1000
+         "--min_rollingpin_r"
+            help = "Minimum rolling pin radius for continuum normalization in uints of FWHM."
+            arg_type = Float64
+            default = 100.0
+         "--nu_continuum"
+            help = "Exponent for rolling pin radius in continuum normalization"
+            arg_type = Float64
+            default = 1.0
+         "--apply_continuum_normalization"
+            help = "Apply continuum normalization."
+            action = :store_true
+        "--save_continuum_normalization"
+            help = "Save continuum normalization to file."
+            action = :store_true
+        "--recompute_continuum_normalization"
+            help = "Recompute continuum normalization even if continuum file exists."
+            action = :store_true
+      end
       add_arg_group!(s, "Filter manifest for ", :argg_filter_param)
       @add_arg_table! s begin
          "--target"
@@ -128,7 +159,6 @@ println("# Parsing arguments...")
             help = "Specify daily start time for CCFs to be processed (HH MM)"
             nargs = 2
             arg_type = Int64
-            #default = [ min_order(NEID2D()), max_order(NEID2D()) ]
             default = [0, 0]
         "--stop_time"
            help = "Specify daily stop time for CCFs to be processed (HH MM)"
@@ -154,8 +184,8 @@ if verbose   println("# Loading other packages 2/2")    end
  # Filename arguments
  @assert isfile(args["manifest"]) || islink(args["manifest"])
  manifest_filename = args["manifest"]
- #args["overwrite"] = true
- if isfile(args["output"]) && !args["overwrite"] 
+ #args["overwrite"] = true   # TODO: Comment after done testing
+ if isfile(args["output"]) && !args["overwrite"]
     error("# Output file " * args["output"] * " already exists (size = " * string(filesize(args["output"])) * " ).")
  end
  @assert !isfile(args["output"]) || args["overwrite"] == true
@@ -182,12 +212,19 @@ if verbose   println("# Loading other packages 2/2")    end
      line_list_filename = joinpath(pkgdir(NeidSolarScripts),"data","solar_line_list_espresso.csv")
  end
  @assert isfile(line_list_filename) || islink(line_list_filename)
+ if args["sed_filename"] != nothing
+    sed_filename = args["sed_filename"]
+ #elseif !@isdefined sed_filename
+ #     sed_filename = joinpath("/home/eford/Code/RvSpectMLEcoSystem/NeidSolarScripts/data","neidMaster_HR_SmoothLampSED_20210101.fits")
+ end
+ @assert !@isdefined(sed_filename) || isfile(sed_filename) || islink(sed_filename)
+ @assert !@isdefined(anchors_filename) || isfile(anchors_filename) || islink(anchors_filename)
 
  # Extract arguments with non-standard types
  if args["orders_to_use"] != nothing && length(args["orders_to_use"]) == 2
      orders_to_use = first(args["orders_to_use"]):last(args["orders_to_use"])
  elseif !@isdefined orders_to_use
-     orders_to_use = first(orders_to_use_default(NEID2D())):last(orders_to_use_default(NEID2D())) 
+     orders_to_use = first(orders_to_use_default(NEID2D())):last(orders_to_use_default(NEID2D()))
  end
  @assert min_order(NEID2D()) <= first(orders_to_use) <= max_order(NEID2D())
  @assert min_order(NEID2D()) <= last(orders_to_use) <= max_order(NEID2D())
@@ -230,6 +267,16 @@ if verbose   println("# Loading other packages 2/2")    end
  start_time = args["start_time"] != nothing && length(args["start_time"]) == 2 ? Time(args["start_time"][1], args["start_time"][2]) : Time(0,0)
  stop_time =  args["stop_time"] != nothing && length(args["stop_time"]) == 2 ? Time(args["stop_time"][1],  args["stop_time"][2]) : Time(12,59,59)
 
+ @assert 3 <= args["continuum_poly_half_width"] <= 200 # arbitrary limits for now
+ @assert 0.5 <= args["quantile_fit_continuum"] <= 1-1/(2*args["smoothing_half_width"])
+ @assert 0 <= args["order_poly_continuum"] <= 6 # arbitrary limits for now
+ @assert 3 <= args["smoothing_half_width"] <= 200 # arbitrary limits for now
+ @assert 1.0 <= args["stretch_factor"] <= 100    # arbitrary limits for now
+ @assert 0.1 <= args["merging_threshold"] <= 2.0 # arbitrary limits for now
+ @assert 1.0 <= args["fwhm_continuum"] <= 30.0   # km/s  arbitrary limits for now
+ @assert 10 <= args["min_rollingpin_r"] <= 1000 # arbitrary limits for now
+ @assert 0.7 <= args["nu_continuum"] <= 1.3  # Recommendations from Cretignier et al.
+ args["apply_continuum_normalization"] = true   # TODO Remove after done testing
 
 if verbose println("# Reading manifest of files to process.")  end
   df_files  = CSV.read(manifest_filename, DataFrame)
@@ -239,11 +286,14 @@ if verbose println("# Reading manifest of files to process.")  end
     @assert hasproperty(df_files,:bjd)
     @assert hasproperty(df_files,:ssbz)
     @assert hasproperty(df_files,:exptime)
-    @assert hasproperty(df_files,:alt_sun)
     @assert hasproperty(df_files,:airmass)
-    @assert hasproperty(df_files,:Δfwhm²)
+    if args["target"] == "Sun" || args["target"] == "Solar"
+      @assert hasproperty(df_files,:alt_sun)  # TODO: Compute if not avaliable?
+      @assert hasproperty(df_files,:Δfwhm²)   # TODO: Compute if not avaliable?
+      df_files[!,"solar_hour_angle"] = NeidSolarScripts.SolarRotation.get_solar_hour_angle(df_files.bjd,obs=:WIYN)
+      if eltype(df_files[!,:order_snrs]) == String   # TODO: Compute if not avaliable?
+    end
     @assert hasproperty(df_files,:order_snrs)
-    if eltype(df_files[!,:order_snrs]) == String
         df_files[!,:order_snrs] = map(i->parse.(Float64,split(df_files[i,:order_snrs][2:end-1],',')),1:size(df_files,1))
     end
     @assert eltype(df_files[!,:order_snrs]) == Vector{Float64}
@@ -261,7 +311,6 @@ if verbose println("# Reading manifest of files to process.")  end
   @assert args["min_snr_factor"] == nothing || 0 <= args["min_snr_factor"] < 1
   @assert args["max_solar_hour_angle"] == nothing || 0 < args["max_solar_hour_angle"] <= 6
 
-  df_files[!,"solar_hour_angle"] = NeidSolarScripts.SolarRotation.get_solar_hour_angle(df_files.bjd,obs=:WIYN)
 
   df_files_use = df_files |>
     @filter( args["target"] == nothing || _.target == args["target"] ) |>
@@ -283,14 +332,24 @@ df_files_cleanest = df_files_use |>
     @take(args["max_num_spectra"] ) |>
     DataFrame
   println("# Found ", size(df_files_cleanest,1), " files considered clean.")
-  @assert size(df_files_cleanest,1) >= 1
+  #@assert size(df_files_cleanest,1) >= 1
 
-true
+if verbose println(now()) end
+
+if @isdefined(sed_filename)
+   sed = Continuum.read_master_sed_neid(filename=sed_filename)
+   min_order_for_continuum = min_order(NEID2D())
+   max_order_for_continuum = max_order(NEID2D())
+   orders_to_use_for_continuum = min_order_for_continuum:max_order_for_continuum
+end
 
 pipeline_plan = PipelinePlan()
  if verbose println("# Reading data files.")  end
  all_spectra = Spectra2DBasic{Float64, Float32, Float32, Matrix{Float64}, Matrix{Float32}, Matrix{Float32}, NEID2D}[]
- mean_clean_flux = []; mean_clean_var = []; mean_clean_flux_continuum_normalized = []; mean_clean_var_continuum_normalized = []
+ mean_clean_flux = []; mean_clean_var = [];
+ mean_clean_flux_sed_normalized = []; mean_clean_var_sed_normalized = [];
+ mean_clean_flux_continuum_normalized = []; mean_clean_var_continuum_normalized = [];
+ normalization_anchors_list = [];
  for (i,row) in enumerate(eachrow(df_files_use))
     if !(isfile(row.Filename)||islink(row.Filename))
         println("# Couldn't find input FITS file: ", row.Filename)
@@ -302,6 +361,7 @@ pipeline_plan = PipelinePlan()
     end
     spec = NEID.read_data(row)
     file_hashes[row.Filename] = bytes2hex(sha256(row.Filename))
+
     if row.Filename ∈ df_files_cleanest.Filename
         if size(mean_clean_flux,1) == 0
             global mean_clean_flux = deepcopy(spec.flux)
@@ -311,17 +371,52 @@ pipeline_plan = PipelinePlan()
             mean_clean_var .+= spec.var
         end
     end
-    continuum = load(row.continuum_filename, "continuum")
-    file_hashes[row.continuum_filename] = bytes2hex(sha256(row.continuum_filename))
-    spec.flux ./= continuum
-    spec.var ./= continuum.^2
-    if row.Filename ∈ df_files_cleanest.Filename
-        if size(mean_clean_flux_continuum_normalized,1) == 0
-            global mean_clean_flux_continuum_normalized = deepcopy(spec.flux)
-            global mean_clean_var_continuum_normalized = deepcopy(spec.var)
-        else
-            mean_clean_flux_continuum_normalized .+= spec.flux
-            mean_clean_var_continuum_normalized .+= spec.var
+
+    #=
+    m = match(r"(neidL1_\d+[T_]\d+)\.fits$", row.Filename)
+    continuum_filename = joinpath(neid_data_path,target_subdir,output_dir,"continuum", m[1] * "_continuum=new.jld2")
+    if !(isfile(continuum_filename)||islink(continuum_filename))
+        println("# Couldn't find matching continuum file", continuum_filename)
+        continue
+    end
+    continuum = load(continuum_filename, "continuum")
+    =#
+
+    if @isdefined sed
+      (f_norm, var_norm) = Continuum.normalize_by_sed(spec.λ,spec.flux,spec.var, sed; poly_order = args["order_poly_continuum"], half_width = args["continuum_poly_half_width"], quantile = args["quantile_fit_continuum"], orders_to_use=orders_to_use_for_continuum)
+      if row.Filename ∈ df_files_cleanest.Filename
+         if size(mean_clean_flux_sed_normalized,1) == 0
+            global mean_clean_flux_sed_normalized = deepcopy(spec.flux)
+            global mean_clean_var_sed_normalized = deepcopy(spec.var)
+         else
+            mean_clean_flux_sed_normalized .+= spec.flux
+            mean_clean_var_sed_normalized .+= spec.var
+         end
+      end
+    end
+
+    if args["apply_continuum_normalization"]
+        if args["anchors_filename"]
+            # TODO Read anchors and replace calc_continuum with version using them
+        end
+        (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, f_norm, var_norm; fwhm = args["fwhm_continuum"], ν = args["nu_continuum"],
+            stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
+            orders_to_use = orders_to_use_for_continuum, verbose = false )
+        push!(normalization_anchors_list, anchors)
+            #=
+            continuum = load(row.continuum_filename, "continuum")
+            file_hashes[row.continuum_filename] = bytes2hex(sha256(row.continuum_filename))
+            =#
+        spec.flux ./= continuum
+        spec.var ./= continuum.^2
+        if row.Filename ∈ df_files_cleanest.Filename
+            if size(mean_clean_flux_continuum_normalized,1) == 0
+                global mean_clean_flux_continuum_normalized = deepcopy(spec.flux)
+                global mean_clean_var_continuum_normalized = deepcopy(spec.var)
+            else
+                mean_clean_flux_continuum_normalized .+= spec.flux
+                mean_clean_var_continuum_normalized .+= spec.var
+            end
         end
     end
     push!(all_spectra,spec)
@@ -342,18 +437,18 @@ line_width = line_width_50_default
  if isfile(line_list_filename) && !args["recompute_line_weights"]
    println("# Reading ", line_list_filename)
    line_list_espresso = CSV.read(line_list_filename, DataFrame)
-   @assert all(map(k->k ∈ names(line_list_espresso), ["lambda","weight","order"])
+   @assert all(map(k->k ∈ names(line_list_espresso), ["lambda","weight","order"]))
    dont_need_to!(pipeline_plan,:clean_line_list_tellurics)
  else
     println("# Can't find ", line_list_filename, ".  Trying ESPRESSO line list.")
     #orders_to_use = good_orders
     #order_list_timeseries = extract_orders(all_spectra,pipeline_plan, orders_to_use=orders_to_use, recalc=true )
-
-    line_list_filename = "G2.espresso.mas"
+    touch(line_list_filename)
+    #line_list_filename = "G2.espresso.mas"
     linelist_for_ccf_fn_w_path = joinpath(pkgdir(EchelleCCFs),"data","masks",line_list_filename)
     line_list_espresso = prepare_line_list(linelist_for_ccf_fn_w_path, all_spectra, pipeline_plan, v_center_to_avoid_tellurics=ccf_mid_velocity,
        Δv_to_avoid_tellurics = 2*max_bc+range_no_mask_change*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID2D()), orders_to_use=orders_to_use, recalc=true, verbose=true)
-    #CSV.write(custom_line_list_filename, line_list_espresso)
+    CSV.write(line_list_filename, line_list_espresso)
  end
  file_hashes[line_list_filename] = bytes2hex(sha256(line_list_filename))
  #outputs["line_list_espresso"] = line_list_espresso
@@ -366,7 +461,7 @@ else
     Δfwhm = zeros(0)
 end
 
-
+if verbose println(now()) end
 line_width_50 = line_width_50_default
   #order_list_timeseries = extract_orders(all_spectra,pipeline_plan,  orders_to_use=orders_to_use,  remove_bad_chunks=false, recalc=true )
   @time (order_ccfs, order_ccf_vars, v_grid_order_ccfs) = ccf_orders(order_list_timeseries, line_list_espresso, pipeline_plan,
@@ -384,7 +479,7 @@ if !isdir(ccf_dir)
    mkdir(ccf_dir)
 end
 =#
-
+if verbose println(now()) end
 #daily_ccf_filename = joinpath(neid_data_path,target_subdir,"output","ccfs", date_str * "_ccfs=default.jld2")
 #daily_ccf_filename = joinpath(neid_data_path,target_subdir,"ccfs", date_str * "_ccfs=default.jld2")
 println("# Saving results to ", daily_ccf_filename, ".")
@@ -396,16 +491,27 @@ println("# Saving results to ", daily_ccf_filename, ".")
     f["orders_to_use"] = orders_to_use
     f["manifest"] = df_files_use
     f["calc_order_ccf_args"] = args
-    f["mean_clean_flux"] = mean_clean_flux
-    f["mean_clean_var"] = mean_clean_var
-    f["mean_clean_flux_continuum_normalized"] = mean_clean_flux_continuum_normalized
-    f["mean_clean_var_continuum_normalized"] = mean_clean_var_continuum_normalized
+    if size(df_files_cleanest,1) >= 1
+      f["mean_clean_flux"] = mean_clean_flux
+      f["mean_clean_var"] = mean_clean_var
+      if size(mean_clean_flux_sed_normalized,1) > 0
+          f["mean_clean_flux_sed_normalized"] = mean_clean_flux_sed_normalized
+          f["mean_clean_var_sed_normalized"] = mean_clean_var_sed_normalized
+      end
+      if size(mean_clean_flux_continuum_normalized,1) > 0
+          f["mean_clean_flux_continuum_normalized"] = mean_clean_flux_continuum_normalized
+          f["mean_clean_var_continuum_normalized"] = mean_clean_var_continuum_normalized
+      end
+    end
+    if args["apply_continuum_normalization"]
+        f["normalization_anchors"] = normalization_anchors_list
+    end
     f["start_processing_time"] = start_processing_time
     f["stop_processing_time"] = stop_processing_time
     f["daily_ccf_filename"] = daily_ccf_filename
     f["file_hashes"] = file_hashes
   end
-
+if verbose println(now()) end
 
 #=
 for (i,row) in enumerate(eachrow(df_files_use))

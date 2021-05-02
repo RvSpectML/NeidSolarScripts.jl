@@ -1,16 +1,16 @@
 module Continuum
-
- using Statistics
- using DSP
- using DataInterpolations
- using Polynomials
- using RollingFunctions, NaNMath
- using FITSIO
- using SortFilters  # For rolling IQR in calc_rolling_median_and_max_to_clip.  https://github.com/sairus7/SortFilters.jl
+ using RvSpectMLBase
+ using Statistics, NaNMath # For mean, median, etc
+ using DSP                 # For smoothing flux
+ using DataInterpolations  # For predicting continuum between anchors
+ using RollingFunctions    # For rolling maximum.  Used in setting radius of rolling-pin.
+ using SortFilters         # For rolling quantile for fitting polynomial while avoiding lines + computing IQR for sigma clipping.  https://github.com/sairus7/SortFilters.jl
+ using FITSIO              # For reading SED
+ using Polynomials         # For fitting out low-order polynomial
 
 # constants
-speed_of_light_mks = 3e8 # m/s
-fwhm_sol = 7.9e3 # m/s
+speed_of_light_mks = 3e8  # m/s  TODO: Update number
+fwhm_sol = 7.9e3          # m/s  TODO: Update number
 
 function read_master_sed_neid(;filename::String = "neidMaster_HR_SmoothLampSED_20210101.fits", path::String = "." )
   f = FITS(joinpath(path,filename))
@@ -24,19 +24,21 @@ function normalize_by_sed(λ::AA1, flux::AA2, var::AA3, sed::AA4; poly_order::In
   @assert size(λ) == size(flux) == size(var) == size(sed)
   f_norm = fill(NaN,size(flux,1),size(flux,2))
   var_norm = fill(NaN,size(var,1),size(var,2))
+  min_usable_pixels_in_order = 7
   for order_idx in orders_to_use
       pix_mask = .!(isnan.(λ[:,order_idx]) .| isnan.(flux[:,order_idx]) .| (flux[:,order_idx].<0) .| isnan.(var[:,order_idx])  .| (var[:,order_idx].==0.0) .| (sed[:,order_idx] .< 0 ))
-      #println("# Order Index: ", order_idx, " pix_mask = ",sum(pix_mask))
-      if sum(pix_mask) < 7 continue   end
+      if sum(pix_mask) < min_usable_pixels_in_order continue   end
       lambda = view(λ,pix_mask,order_idx)
       f_obs = view(flux,pix_mask,order_idx)
       sed_view = view(sed,pix_mask,order_idx)
       var_obs = view(var,pix_mask,order_idx)
-      upper_envelope = calc_rolling_quantile(lambda,f_obs./sed_view, half_width=half_width, quantile=quantile)
-      coeff = Polynomials.fit(lambda,upper_envelope,poly_order,weights=sed_view.^2 ./var_obs)
-      polyfit = coeff.(view(λ,:,order_idx))
-      #f_norm[:,order_idx]   .= view(flux,:,order_idx)./max.(view(sed,:,order_idx).*polyfit,0.0)
-      #var_norm[:,order_idx] .=  view(var,:,order_idx)./max.(view(sed,:,order_idx).*polyfit,0.0)
+      if poly_order >= 1 && half_width >=1
+        upper_envelope = calc_rolling_quantile(lambda,f_obs./sed_view, half_width=half_width, quantile=quantile)
+        coeff = Polynomials.fit(lambda,upper_envelope,poly_order,weights=sed_view.^2 ./var_obs)
+        polyfit = coeff.(view(λ,:,order_idx))
+      else
+        polyfit = 1
+      end
       f_norm[:,order_idx]   .= view(flux,:,order_idx)./(view(sed,:,order_idx).*polyfit)
       var_norm[:,order_idx] .=  view(var,:,order_idx)./(view(sed,:,order_idx).*polyfit)
       idx_invalid_norm = view(sed,:,order_idx).*polyfit .<= 0.0
@@ -574,23 +576,44 @@ function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3; λout::AV4 = λ, fwhm
  return (anchors=anchors_merged, continuum=continuum, f_filtered=f_smooth)
 end
 
+abstract type AbstractGetPixelRangeFunctor end
+
+struct GetPixelRangeFromWavelengthGrid{AA} <: AbstractGetPixelRangeFunctor where { T<:Real, AA<:AbstractArray{T,2} }
+      data::AA
+end
+
+function (gpr::GetPixelRangeFromWavelengthGrid{AA1})(ord_idx::Integer) where { T1<:Real, AA1<:AbstractArray{T1,2} }
+    return 1:size(gpr.data,1)
+ end
+
+#=
 function default_get_pixel_range(λ::AA1, ord_idx::Integer) where { T1<:Real, AA1<:AbstractArray{T1,2} }
   return 1:size(λ,1)
+end
+=#
+
+struct GetPixelRangeFromInstrument{InstT<:AbstractInstrument} <:  AbstractGetPixelRangeFunctor
+      inst::InstT
+end
+function (gpr::GetPixelRangeFromInstrument{InstT})(ord_idx::Integer) where {  InstT<:AbstractInstrument }
+   #inst = get_inst(spec)
+   pix = min_pixel_in_order(gpr.inst):max_pixel_in_order(gpr.inst)
 end
 
 function calc_continuum(λ::AA1, f_obs::AA2, var_obs::AA3; λout::AA4 = λ, fwhm::Real = fwhm_sol, ν::Real =1.0,
   stretch_factor::Real = 5.0, merging_threshold::Real = 0.25, smoothing_half_width::Integer = 6, min_R_factor::Real = 100.0,
-        orders_to_use::AbstractVector{<:Integer} = 1:size(λ,2), get_pixel_range::Function = default_get_pixel_range, verbose::Bool = false ) where {
-        T1<:Real, T2<:Real, T3<:Real, T4<:Real, AA1<:AbstractArray{T1,2}, AA2<:AbstractArray{T2,2}, AA3<:AbstractArray{T3,2} , AA4<:AbstractArray{T4,2} }
+        orders_to_use::AbstractVector{<:Integer} = 1:size(λ,2), get_pixel_range::GPRT = GetPixelRangeFromWavelengthGrid(λ), verbose::Bool = false ) where {
+        T1<:Real, T2<:Real, T3<:Real, T4<:Real, AA1<:AbstractArray{T1,2}, AA2<:AbstractArray{T2,2}, AA3<:AbstractArray{T3,2} , AA4<:AbstractArray{T4,2}, GPRT<:AbstractGetPixelRangeFunctor }
   @assert size(λ) == size(f_obs) == size(var_obs)
   @assert size(λout,2) == size(λout,2)
   num_orders = size(λout,2)
   anchors_2d = fill(Int64[],num_orders)
   continuum_2d = fill(NaN,size(λout,1),size(λout,2))
   f_filtered_2d = fill(NaN,size(λout,1),size(λout,2))
-  for ord_idx in orders_to_use
+  Threads.@threads for ord_idx in orders_to_use
+  #for ord_idx in orders_to_use
     if verbose println("# Order index = ", ord_idx)  end
-    pix = get_pixel_range(λ,ord_idx)
+    pix = get_pixel_range(ord_idx)
     λ_use = view(λ,pix,ord_idx)
     f_obs_use = convert.(Float64,view(f_obs,pix,ord_idx))
     var_obs_use = convert.(Float64,view(var_obs,pix,ord_idx))
