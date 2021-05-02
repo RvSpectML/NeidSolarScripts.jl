@@ -612,7 +612,10 @@ function calc_continuum(λ::AA1, f_obs::AA2, var_obs::AA3; λout::AA4 = λ, fwhm
   f_filtered_2d = fill(NaN,size(λout,1),size(λout,2))
   Threads.@threads for ord_idx in orders_to_use
   #for ord_idx in orders_to_use
-    if verbose println("# Order index = ", ord_idx)  end
+    if verbose
+      println("# Order index = ", ord_idx)
+      flush(stdout)
+    end
     pix = get_pixel_range(ord_idx)
     λ_use = view(λ,pix,ord_idx)
     f_obs_use = convert.(Float64,view(f_obs,pix,ord_idx))

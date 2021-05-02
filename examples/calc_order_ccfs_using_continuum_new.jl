@@ -124,11 +124,14 @@ println("# Parsing arguments...")
          "--apply_continuum_normalization"
             help = "Apply continuum normalization."
             action = :store_true
+        "--continuum_normalization_individually"
+            help = "CURRETNLY ONLY OPTION.  Calculate continuum normalization for each file rather than averaged spectra."
+            action = :store_true
         "--save_continuum_normalization"
-            help = "Save continuum normalization to file."
+            help = "NOT IMPLEMENTED.  Save continuum normalization to file."
             action = :store_true
         "--recompute_continuum_normalization"
-            help = "Recompute continuum normalization even if continuum file exists."
+            help = "CURRENTLY ONLY OPTION.  Recompute continuum normalization even if continuum file exists."
             action = :store_true
       end
       add_arg_group!(s, "Filter manifest for ", :argg_filter_param)
@@ -169,7 +172,7 @@ println("# Parsing arguments...")
          "--max_num_spectra"
             help = "Maximum number of spectra to process."
             arg_type = Int
-            default = 250
+            default = 250   # TODO: Increase  after finish testing
       end
 
      return parse_args(s)
@@ -338,7 +341,7 @@ if verbose println(now()) end
 
 if @isdefined(sed_filename)
    sed = Continuum.read_master_sed_neid(filename=sed_filename)
-   min_order_for_continuum = min_order(NEID2D())
+   min_order_for_continuum = 12 # min_order(NEID2D())
    max_order_for_continuum = max_order(NEID2D())
    orders_to_use_for_continuum = min_order_for_continuum:max_order_for_continuum
 end
@@ -359,6 +362,8 @@ pipeline_plan = PipelinePlan()
         println("# Couldn't find matching continuum file: ", row.continuum_filename)
         continue
     end
+    println("# Reading ", row.Filename, "(",i,"/",size(df_files,1),")")
+    flush(stdout)
     spec = NEID.read_data(row)
     file_hashes[row.Filename] = bytes2hex(sha256(row.Filename))
 
@@ -386,20 +391,23 @@ pipeline_plan = PipelinePlan()
       (f_norm, var_norm) = Continuum.normalize_by_sed(spec.λ,spec.flux,spec.var, sed; poly_order = args["order_poly_continuum"], half_width = args["continuum_poly_half_width"], quantile = args["quantile_fit_continuum"], orders_to_use=orders_to_use_for_continuum)
       if row.Filename ∈ df_files_cleanest.Filename
          if size(mean_clean_flux_sed_normalized,1) == 0
-            global mean_clean_flux_sed_normalized = deepcopy(spec.flux)
-            global mean_clean_var_sed_normalized = deepcopy(spec.var)
+            global mean_clean_flux_sed_normalized = deepcopy(f_norm)
+            global mean_clean_var_sed_normalized = deepcopy(var_norm)
          else
-            mean_clean_flux_sed_normalized .+= spec.flux
-            mean_clean_var_sed_normalized .+= spec.var
+            mean_clean_flux_sed_normalized .+= f_norm
+            mean_clean_var_sed_normalized .+= var_norm
          end
       end
+    else
+        f_norm = spec.flux
+        var_norm = spec.var
     end
 
-    if args["apply_continuum_normalization"]
+    if args["apply_continuum_normalization"] #&& arg["continuum_normalization_individually"]
         if args["anchors_filename"]
             # TODO Read anchors and replace calc_continuum with version using them
         end
-        (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, f_norm, var_norm; fwhm = args["fwhm_continuum"], ν = args["nu_continuum"],
+        (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, f_norm, var_norm; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
             stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
             orders_to_use = orders_to_use_for_continuum, verbose = false )
         push!(normalization_anchors_list, anchors)
@@ -407,22 +415,36 @@ pipeline_plan = PipelinePlan()
             continuum = load(row.continuum_filename, "continuum")
             file_hashes[row.continuum_filename] = bytes2hex(sha256(row.continuum_filename))
             =#
-        spec.flux ./= continuum
-        spec.var ./= continuum.^2
+        f_norm ./= continuum
+        var_norm ./= continuum.^2
         if row.Filename ∈ df_files_cleanest.Filename
             if size(mean_clean_flux_continuum_normalized,1) == 0
-                global mean_clean_flux_continuum_normalized = deepcopy(spec.flux)
-                global mean_clean_var_continuum_normalized = deepcopy(spec.var)
+                global mean_clean_flux_continuum_normalized = deepcopy(f_norm)
+                global mean_clean_var_continuum_normalized = deepcopy(var_norm)
             else
-                mean_clean_flux_continuum_normalized .+= spec.flux
-                mean_clean_var_continuum_normalized .+= spec.var
+                mean_clean_flux_continuum_normalized .+= f_norm
+                mean_clean_var_continuum_normalized .+= var_norm
             end
         end
+        spec.flux .= f_norm
+        spec.var .= var_norm
+
     end
     push!(all_spectra,spec)
  end
  GC.gc()
  dont_need_to!(pipeline_plan,:read_spectra);
+
+ #= TODO IMPLEMENT
+ if args["apply_continuum_normalization"] && !arg["continuum_normalization_individually"]
+     if args["anchors_filename"]
+         # TODO Read anchors and replace calc_continuum with version using them
+     end
+     (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, f_norm, var_norm; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
+         stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
+         orders_to_use = orders_to_use_for_continuum, verbose = false )
+ end
+ =#
  order_list_timeseries = extract_orders(all_spectra, pipeline_plan,  orders_to_use=orders_to_use, remove_bad_chunks=false, recalc=true )
 
 

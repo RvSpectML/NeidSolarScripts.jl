@@ -98,7 +98,7 @@ begin
   pal2 = palette(:berlin, length(order_idx_lo:order_idx_step:order_idx_hi))
   for (i,ord_idx) in enumerate(order_idx_lo:order_idx_step:order_idx_hi)
 		if all(isnan.(order_ccfs_norm[:,ord_idx,obs_idx])) continue end
-  		y = scale_order_ccf_depths ? 1. .- (1.0 .-order_ccfs_norm[:,ord_idx,obs_idx])./ccf_order_depths[ord_idx,obs_idx] :
+  		y = scale_order_ccf_depths ? 1. .- (1.0 .-order_ccfs_norm[:,ord_idx,obs_idx])./ccf_order_depths[1,ord_idx,obs_idx] :
 		order_ccfs_norm[:,ord_idx,obs_idx]
 		#plot!(plt2,data["v_grid"],order_ccfs_norm[:,ord_idx,obs_idx], ms=1.2,color=pal2[i],legend=:none)
 		plot!(plt2,data["v_grid"],y, ms=1.2,color=pal2[i],legend=:none)
@@ -109,6 +109,12 @@ begin
   title!(plt2,"CCF Order Idxs " * string(order_idx_lo) * "-" * string(order_idx_hi) * " Obs " * string(obs_idx))
   #ylims!(plt2,extrema(f_filtered[λmin.<=lambda.<=λmax]))
   plt2
+end
+
+# ╔═╡ ceae0ff5-f650-4dbf-81e5-26864eb1adcc
+begin
+	plt5 = heatmap(data["v_grid"],order_idx_lo:order_idx_hi,order_ccfs_norm[:,order_idx_lo:order_idx_hi,obs_idx]')
+	xlims!(plt5,vmin,vmax)
 end
 
 # ╔═╡ df7571c9-8b3f-4503-8bbe-42a77f0f9c0e
@@ -133,17 +139,14 @@ begin
   plt3
 end
 
+# ╔═╡ 0e4e2de1-d706-4019-bece-e24367b38d33
+plt4 = heatmap(data["v_grid"],obs_idx_lo:obs_idx_hi,(order_ccfs_norm[:,order_idx,obs_idx_lo:obs_idx_step:obs_idx_hi].-order_ccfs_mean[:,order_idx])')
+
 # ╔═╡ 964d83d4-7c56-43b2-a989-f7d22089ee06
 data["order_ccfs"][:,39,2]
 
 # ╔═╡ c7a9d874-d823-45ff-8214-da400d01f383
 collect(keys(data))
-
-# ╔═╡ 0e4e2de1-d706-4019-bece-e24367b38d33
-heatmap(data["v_grid"],obs_idx_lo:obs_idx_hi,order_ccfs_norm[:,order_idx,:].-order_ccfs_mean[:,order_idx]
-
-# ╔═╡ ceae0ff5-f650-4dbf-81e5-26864eb1adcc
-size(order_ccfs_mean)
 
 # ╔═╡ Cell order:
 # ╠═42b4e6fe-a897-11eb-2676-f7fd96f35a22
@@ -157,9 +160,9 @@ size(order_ccfs_mean)
 # ╟─c403d4ff-3035-4bfc-9b9e-3f33ed0a6b7a
 # ╟─d84af1b1-1023-4493-8b0f-90c9030be4bd
 # ╟─7dc1bf77-174b-4614-8aea-15cad25c0335
+# ╟─ceae0ff5-f650-4dbf-81e5-26864eb1adcc
 # ╟─df7571c9-8b3f-4503-8bbe-42a77f0f9c0e
 # ╟─468fe2c8-7c4c-45f2-9577-a2cecba64d2d
+# ╠═0e4e2de1-d706-4019-bece-e24367b38d33
 # ╠═964d83d4-7c56-43b2-a989-f7d22089ee06
 # ╠═c7a9d874-d823-45ff-8214-da400d01f383
-# ╠═0e4e2de1-d706-4019-bece-e24367b38d33
-# ╠═ceae0ff5-f650-4dbf-81e5-26864eb1adcc
