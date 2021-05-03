@@ -20,13 +20,13 @@ function read_master_sed_neid(;filename::String = "neidMaster_HR_SmoothLampSED_2
 end
 
 function normalize_by_sed(λ::AA1, flux::AA2, var::AA3, sed::AA4; poly_order::Integer = 4, orders_to_use::AV5 = 1:size(flux,2),
-      half_width::Integer = 50, quantile::Real = 0.9 ) where { T1<:Real, T2<:Real, T3<:Real, T4<:Real, T5<:Integer, AA1<:AbstractArray{T1,2}, AA2<:AbstractArray{T2,2}, AA3<:AbstractArray{T3,2}, AA4<:AbstractArray{T4,2}, AV5<:AbstractVector{T5}  }
+      half_width::Integer = 50, quantile::Real = 0.9, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, T4<:Real, T5<:Integer, AA1<:AbstractArray{T1,2}, AA2<:AbstractArray{T2,2}, AA3<:AbstractArray{T3,2}, AA4<:AbstractArray{T4,2}, AV5<:AbstractVector{T5}  }
   @assert size(λ) == size(flux) == size(var) == size(sed)
   f_norm = fill(NaN,size(flux,1),size(flux,2))
   var_norm = fill(NaN,size(var,1),size(var,2))
   min_usable_pixels_in_order = 7
   for order_idx in orders_to_use
-      pix_mask = .!(isnan.(λ[:,order_idx]) .| isnan.(flux[:,order_idx]) .| (flux[:,order_idx].<0) .| isnan.(var[:,order_idx])  .| (var[:,order_idx].==0.0) .| (sed[:,order_idx] .< 0 ))
+      pix_mask = .!(isnan.(λ[:,order_idx]) .| isnan.(flux[:,order_idx]) .| (flux[:,order_idx].<0) .| isnan.(var[:,order_idx])  .| (var[:,order_idx].<=0.0) .| (sed[:,order_idx] .<= 0 ))
       if sum(pix_mask) < min_usable_pixels_in_order continue   end
       lambda = view(λ,pix_mask,order_idx)
       f_obs = view(flux,pix_mask,order_idx)
@@ -37,10 +37,11 @@ function normalize_by_sed(λ::AA1, flux::AA2, var::AA3, sed::AA4; poly_order::In
         coeff = Polynomials.fit(lambda,upper_envelope,poly_order,weights=sed_view.^2 ./var_obs)
         polyfit = coeff.(view(λ,:,order_idx))
       else
+        if verbose  println("# Skipping polynomial fit to flux/sed for order index ", order_idx)  end
         polyfit = 1
       end
       f_norm[:,order_idx]   .= view(flux,:,order_idx)./(view(sed,:,order_idx).*polyfit)
-      var_norm[:,order_idx] .=  view(var,:,order_idx)./(view(sed,:,order_idx).*polyfit)
+      var_norm[:,order_idx] .=  view(var,:,order_idx)./(view(sed,:,order_idx).*polyfit).^2
       idx_invalid_norm = view(sed,:,order_idx).*polyfit .<= 0.0
       f_norm[idx_invalid_norm,order_idx] .= NaN
       var_norm[idx_invalid_norm,order_idx] .= NaN
