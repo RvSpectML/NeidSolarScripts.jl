@@ -65,34 +65,35 @@ function smooth(f::AV2; half_width::Integer = 6 ) where {  T2<:Real, AV2<:Abstra
   end
 end
 
-function calc_rolling_max(f::AV2; width::Integer = 14 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
- shift = max(1,floor(Int64,width//2))
- #println(" size(f) = ",size(f), " width= ", width, " shift = ", shift)
+function calc_rolling_max(f::AV2; width::Integer = 13 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
+ #shift = max(1,floor(Int64,width//2))
+ @assert width%2 == 1
+ shift = max(1,convert(Int64,(width+1)//2))
+ #println(" size(f) = ",size(f), " width= ", width, " shift = ", shift, " rolling_max = ", size(rolling(NaNMath.maximum,f,width)), " target = ", size((shift+1):(length(f)-shift)))
  z = similar(f)
- #z[(shift):(length(f)-shift)] .= rollmax(f,width)
- z[shift:(end-shift)] .= rolling(NaNMath.maximum,f,width)
+ #z[(shift):(length(f)-shift+1)] .= rollmax(f,width)
+ z[(shift):(end-shift+1)] .= rolling(NaNMath.maximum,f,width)
+ z[(end-shift+2):end] .= z[end-shift+1]
  z[1:shift-1] .= z[shift]
- z[(end-shift+1):end] .= z[end-shift]
  return z
 end
 
-function find_local_maxima(f::AV2; half_width::Integer = 7 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
-  rollingmax = calc_rolling_max(f,width=half_width*2)
+function find_local_maxima(f::AV2; half_width::Integer = 6 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
+  rollingmax = calc_rolling_max(f,width=half_width*2+1)
   findall(f .== rollingmax)
 end
 
-function calc_rolling_median(λ::AV1, f::AV2; width::Integer = 4, verbose::Bool = false ) where { T1<:Real, T2<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2} }
+function calc_rolling_median(λ::AV1, f::AV2; half_width::Integer = 4, verbose::Bool = false ) where { T1<:Real, T2<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2} }
   @assert length(λ) == length(f)
-  @assert width >= 2
-  @assert width%2 == 0
-  shift = floor(Int64,width//2)
+  @assert half_width >= 1
+  #shift = half_width # floor(Int64,width//2)
   f_filtered = similar(f)
   #if any(isnan.(f))
   #   f_filtered .= running(NaNMath.median,f,width)
   #else
-     f_filtered[(1+shift):(length(f)-shift)] .= movsort(f, width, 0.5)
-     f_filtered[1:shift] .= f_filtered[1+shift]
-     f_filtered[(length(f)-shift+1):end] .= f_filtered[length(f)-shift]
+     f_filtered[(1+half_width):(length(f)-half_width)] .= movsort(f, 2*half_width+1, 0.5)[1+2*half_width:end]
+     f_filtered[1:half_width] .= f_filtered[1+half_width]
+     f_filtered[(length(f)-half_width+1):end] .= f_filtered[length(f)-half_width]
   #end
   return f_filtered
 end
@@ -101,7 +102,7 @@ function calc_rolling_quantile(λ::AV1, f::AV2; half_width::Integer = 4, quantil
   @assert length(λ) == length(f)
   @assert half_width >= 1
   output = similar(λ)
-  moving_quartiles = movsort(f, 2*half_width, quantile)
+  moving_quartiles = movsort(f, 2*half_width+1, quantile)
   output[(1+half_width):(end-half_width)] .= moving_quartiles[1+2*half_width:end]
   output[1:half_width] .= output[1+half_width]
   output[end-half_width+1:end] .= output[end-half_width]
@@ -207,9 +208,9 @@ function calc_rollingpin_radius(λ::AV1, f::AV2; fwhm::Real = fwhm_sol,
             min_R_factor::Real = 100, ν::Real = 1, verbose::Bool = false ) where { T1<:Real, AV1<:AbstractVector{T1}, T2<:Real, AV2<:AbstractVector{T2}  }
    λlo = minimum(λ)
    S1_width = S1_width_factor*fwhm/speed_of_light_mks*λlo
-   S1_width = min(2*floor(Int64,S1_width/2),2)
+   S1_width = min(2*floor(Int64,S1_width/2),2)+1
    S2_width = S2_width_factor*S1_width
-   S2_width = 2*floor(Int64,S2_width/2)
+   S2_width = 2*floor(Int64,S2_width/2)+1
    f_max1 = calc_rolling_max(f,width=S1_width)
    f_max2 = calc_rolling_max(f,width=S2_width)
    (longest_len, longest_start, longest_stop) = longest_cluster_same_sign(f_max2.-f_max1)
