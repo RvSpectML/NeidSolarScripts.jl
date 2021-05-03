@@ -427,22 +427,12 @@ function find_clean_anchors_by_slope(anchors::AV1, f::AV2; threshold::Real = 0.9
   return mask
 end
 
+# Currently, not used
 function filter_anchor_groups(anchors::AV1; min_num::Integer = 3, verbose::Bool = false ) where { T1<:Real, AV1<:AbstractVector{T1} }
-  Δpix = anchors[2:end] .- anchors[1:end-1]
-  nanchors = length(anchors)
-  @assert nanchors == length(f)
-  @assert nanchors >= 8
-  Δabsslope = zeros(length(anchors))
-  for i in 2:nanchors-1
-    slope_hi = (f[i+1]-f[i])/(anchors[i+1]-anchors[i])
-    slope_lo = (f[i]-f[i-1])/(anchors[i]-anchors[i-1])
-    Δabsslope[i] = abs(slope_hi-slope_lo)
-  end
-  threshold = quantile(Δabsslope[2:end-1],threshold)
-  mask = Δabsslope.<threshold
+  #Δpix = anchors[2:end] .- anchors[1:end-1]
+  mask = trues(length(anchors))
   return mask
 end
-
 
 function merge_nearby_anchors(anchors::AV1, λ::AV2; threshold::Real = 1, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3} }
   Δλ = λ[anchors[2:end]] .- λ[anchors[1:end-1]]
@@ -568,19 +558,49 @@ function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3; λout::AV4 = λ, fwhm
  rollingpin_radius = calc_rollingpin_radius(λ, f_smooth, fwhm=fwhm, min_R_factor=min_R_factor, verbose=verbose, ν=ν)
 
  anch_orig = calc_continuum_anchors(λ[idx_local_maxima],f_smooth[idx_local_maxima],radius=rollingpin_radius[idx_local_maxima], stretch_factor=stretch_factor, verbose=verbose)
+ if verbose println("# Found ", length(anch_orig), " potential anchors." )  end
  anch_orig = idx_local_maxima[anch_orig]
  anchor_vals = f_smooth[anch_orig]
- replace_edge_anchor_vals!(anchor_vals)
- anch_mask = find_clean_anchors_by_slope(anch_orig,anchor_vals, verbose=verbose)
+ if length(anch_orig) >= 7  # 2n+1, for replace_edge_anchor_vals!
+   replace_edge_anchor_vals!(anchor_vals)
+   anch_mask = find_clean_anchors_by_slope(anch_orig,anchor_vals, threshold = 0.95, verbose=verbose)
+   if verbose println("# After rejected high-slope anchors ", sum(anch_mask), " anchors left." )  end
+ else
+   anch_mask = trues(length(anch_orig))
+ end
  #anchors_merged = anch_orig[anch_mask]
- if merging_threshold > 0
+ if merging_threshold > 0  && length(anch_orig) >= 4
      anchors_merged = merge_nearby_anchors(anch_orig[anch_mask],λ, threshold=merging_threshold, verbose=verbose)
+     if verbose println("# After merging ", length(anchors_merged), " anchors left." )  end
  else
     anchors_merged = anch_orig[anch_mask]
  end
+ if length(anchors_merged) < 4
+   println("# Warning only ",  length(anchors_merged), " anchors found, aborting order.")
+   half_width = min_R_factor*(fwhm/speed_of_light_mks)/log(8*log(2))*minimum(λ)/(λ[2]-λ[1])
+   f_alt_continuum = Continuum.smooth(f_obs, half_width=floor(Int64,half_width/2)*2 )
+   return (anchors=Int64[], continuum=f_alt_continuum, f_filtered=f_smooth)
+ end
+  #anchors_merged = anch_orig[anch_mask]
  continuum = calc_continuum_from_anchors_hybrid(λ,f_smooth,anchors_merged, λout=λout) # , verbose=verbose)
  return (anchors=anchors_merged, continuum=continuum, f_filtered=f_smooth)
 end
+
+function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3, anchors::AV5; λout::AV4 = λ, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, T4<:Real, T5<:Integer, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}, AV5<:AbstractVector{T5}  }
+ #clip_width_A = 1.0
+ #clip_width_pix = clip_width_A/(λ[2]-λ[1])
+ #@assert 1 <= clip_width_pix < Inf
+ #clip_width_pix = 2*floor(Int64,clip_width_pix/2)
+ mean_snr_per_pix = calc_mean_snr(f_obs,var_obs)
+ #smoothing_half_width = (mean_snr_per_pix >= 30) ? smoothing_half_width : 40
+ if mean_snr_per_pix < 30
+    smoothing_half_width = min(100, ceil(Int64,6*(30/mean_snr_per_pix)^2))
+ end
+ f_smooth = Continuum.smooth(f_obs, half_width=smoothing_half_width)
+ continuum = calc_continuum_from_anchors_hybrid(λ,f_smooth,anchors, λout=λout) # , verbose=verbose)
+ return (anchors=anchors, continuum=continuum, f_filtered=f_smooth)
+end
+
 
 abstract type AbstractGetPixelRangeFunctor end
 
@@ -616,8 +636,8 @@ function calc_continuum(λ::AA1, f_obs::AA2, var_obs::AA3; λout::AA4 = λ, fwhm
   anchors_2d = fill(Int64[],num_orders)
   continuum_2d = fill(NaN,size(λout,1),size(λout,2))
   f_filtered_2d = fill(NaN,size(λout,1),size(λout,2))
-  Threads.@threads for ord_idx in orders_to_use
-  #for ord_idx in orders_to_use
+  #Threads.@threads for ord_idx in orders_to_use
+  for ord_idx in orders_to_use
     if verbose
       println("# Order index = ", ord_idx)
       flush(stdout)
@@ -629,13 +649,48 @@ function calc_continuum(λ::AA1, f_obs::AA2, var_obs::AA3; λout::AA4 = λ, fwhm
     if all(isnan.(λ_use)) || all(isnan.(f_obs_use)) || all(isnan.(var_obs_use))   continue   end
     λout_use = view(λout,pix,ord_idx)
     (anchors_1d, continuum_order_1d, f_filtered_1d) = Continuum.calc_continuum(λ_use,f_obs_use,var_obs_use, λout=λout_use,
-         stretch_factor=stretch_factor, merging_threshold=merging_threshold, smoothing_half_width=smoothing_half_width, min_R_factor=min_R_factor, verbose=false)
+         stretch_factor=stretch_factor, merging_threshold=merging_threshold, smoothing_half_width=smoothing_half_width, min_R_factor=min_R_factor, verbose=verbose)
     anchors_2d[ord_idx] = anchors_1d
     continuum_2d[pix,ord_idx] .= continuum_order_1d
     f_filtered_2d[pix,ord_idx] .= f_filtered_1d
   end
   return (anchors=anchors_2d, continuum=continuum_2d, f_filtered=f_filtered_2d)
 end
+
+function calc_continuum(λ::AA1, f_obs::AA2, var_obs::AA3, anchors::AVV; λout::AA4 = λ,
+  #fwhm::Real = fwhm_sol, ν::Real =1.0,
+  #stretch_factor::Real = 5.0, merging_threshold::Real = 0.25, smoothing_half_width::Integer = 6, min_R_factor::Real = 100.0,
+        orders_to_use::AbstractVector{<:Integer} = 1:size(λ,2), get_pixel_range::GPRT = GetPixelRangeFromWavelengthGrid(λ), verbose::Bool = false ) where {
+        T1<:Real, T2<:Real, T3<:Real, T4<:Real, T5<:Integer, AA1<:AbstractArray{T1,2}, AA2<:AbstractArray{T2,2}, AA3<:AbstractArray{T3,2} , AA4<:AbstractArray{T4,2}, AVV<:AbstractVector{Vector{T5}}, GPRT<:AbstractGetPixelRangeFunctor }
+  @assert size(λ) == size(f_obs) == size(var_obs)
+  @assert size(λout,2) == size(λout,2)
+  num_orders = size(λout,2)
+  @assert length(anchors) == num_orders
+  #anchors_2d = fill(Int64[],num_orders)
+  continuum_2d = fill(NaN,size(λout,1),size(λout,2))
+  f_filtered_2d = fill(NaN,size(λout,1),size(λout,2))
+  Threads.@threads for ord_idx in orders_to_use
+  #for ord_idx in orders_to_use
+    if verbose
+      println("# Order index = ", ord_idx)
+      flush(stdout)
+    end
+    pix = get_pixel_range(ord_idx)
+    λ_use = view(λ,pix,ord_idx)
+    λout_use = view(λout,pix,ord_idx)
+    f_obs_use = convert.(Float64,view(f_obs,pix,ord_idx))
+    var_obs_use = convert.(Float64,view(var_obs,pix,ord_idx))
+    if all(isnan.(λ_use)) || all(isnan.(f_obs_use)) || all(isnan.(var_obs_use))   continue   end
+
+    (anchors_1d, continuum_order_1d, f_filtered_1d) = Continuum.calc_continuum(λ_use,f_obs_use,var_obs_use,
+          anchors[ord_idx], λout=λout_use, verbose=verbose)
+    #anchors_2d[ord_idx] = anchors_1d
+    continuum_2d[pix,ord_idx] .= continuum_order_1d
+    f_filtered_2d[pix,ord_idx] .= f_filtered_1d
+  end
+  return (anchors=anchors, continuum=continuum_2d, f_filtered=f_filtered_2d)
+end
+
 
 # Code for mergesorted from
 # https://discourse.julialang.org/t/looking-for-merge-algorithm/47473/2
