@@ -551,9 +551,13 @@ function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3; λout::AV4 = λ, fwhm
  #@assert 1 <= clip_width_pix < Inf
  #clip_width_pix = 2*floor(Int64,clip_width_pix/2)
  mean_snr_per_pix = calc_mean_snr(f_obs,var_obs)
- smoothing_half_width = (mean_snr_per_pix >= 30) ? smoothing_half_width : 40
+ #smoothing_half_width = (mean_snr_per_pix >= 30) ? smoothing_half_width : 40
+ if mean_snr_per_pix < 20
+    smoothing_half_width = min(100, ceil(Int64,6*(20/mean_snr_per_pix)^2))
+ end
  f_smooth = Continuum.smooth(f_obs, half_width=smoothing_half_width)
  idx_local_maxima = find_local_maxima(f_smooth, half_width=local_maximum_half_width)
+ if verbose println("# Found ", length(idx_local_maxima), " local maxima." )  end
  if length(idx_local_maxima) < 7
    println("# Warning only ",  length(idx_local_maxima), " local maxima, aborting order.")
    half_width = min_R_factor*(fwhm/speed_of_light_mks)/log(8*log(2))*minimum(λ)/(λ[2]-λ[1])
