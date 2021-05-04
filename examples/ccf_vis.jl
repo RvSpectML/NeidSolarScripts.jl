@@ -313,6 +313,7 @@ scatter(data["orders_to_use"][1:21],map(i->std(rv_matrix[i,:]),1:21))
 # ╔═╡ e7906830-5dfd-42ea-ad8e-948b7a3138db
 begin
 	rvs = map(i->NaNMath.sum(rv_matrix[order_idx_for_rvs,i]./σ_rv_matrix[order_idx_for_rvs,i].^2)./NaNMath.sum(1.0 ./σ_rv_matrix[order_idx_for_rvs,i].^2),1:num_obs)
+	rvs .+= data["manifest"][!,"Δv_diff_ext"]
 	σ_rvs = sqrt.(map(i->1.0 ./NaNMath.sum(1.0 ./σ_rv_matrix[order_idx_for_rvs,i].^2),1:num_obs))
 end;
 
@@ -320,19 +321,13 @@ end;
 (t_binned, rvs_binned) = bin_times_and_rvs_max_Δt(times=data["manifest"].bjd,rvs=rvs,Δt_threshold= 5/(24*60))
 
 # ╔═╡ aac89b26-bd5d-402e-9b1c-4ab6a70dfe51
-(NaNMath.std(rvs), NaNMath.mean(σ_rvs))
-
-# ╔═╡ 2f9d86f3-ce3f-4a9c-a624-e0967a0ada70
-std(rvs_binned)
-
-# ╔═╡ 92517b16-e8f2-4c16-847f-350c93aea60f
-
-
-# ╔═╡ 21d940fc-c258-4f01-a88b-71ff2109f80d
-daily_slope = Polynomials.fit(t_binned,rvs_binned,1)[1]
+(NaNMath.std(rvs), NaNMath.mean(σ_rvs), std(rvs_binned))
 
 # ╔═╡ 493b5c40-214a-41cd-aaaf-02609704ad49
-daily_fit = Polynomials.fit(data["manifest"].bjd.-mean(data["manifest"].bjd),rvs,1)
+begin
+	daily_fit = Polynomials.fit(data["manifest"].bjd.-mean(data["manifest"].bjd),rvs,1)
+	daily_slope = Polynomials.fit(t_binned,rvs_binned,1)[1]
+end
 
 # ╔═╡ 2921145f-df6a-4b14-9faf-46a27e8f9057
 #std(rvs.-daily_fit.(data["manifest"].bjd.-mean(data["manifest"].bjd))), 
@@ -365,6 +360,9 @@ begin
 	scatter!(rv_matrix[10,:])
 end
 
+# ╔═╡ 859a9d38-f3d5-42ea-ba91-1673ded404ad
+data["manifest"][!,"Δv_diff_ext"]
+
 # ╔═╡ Cell order:
 # ╠═42b4e6fe-a897-11eb-2676-f7fd96f35a22
 # ╠═5313b674-a897-11eb-3820-218f26a14d4d
@@ -396,18 +394,16 @@ end
 # ╠═d9782c42-a2f7-41ae-a324-0cc86a56f393
 # ╠═9bafebc2-daae-42ea-9f68-4020a590a030
 # ╠═2735c043-d57d-4782-8ad1-a1254e373fe0
-# ╟─82f4ceb0-617a-434e-97de-c33d500958f4
+# ╠═82f4ceb0-617a-434e-97de-c33d500958f4
 # ╠═c7ec68a3-6a2b-4cad-b1ff-2cb9b23cc499
 # ╠═e7541e93-8b7a-4c26-901e-d887931b8103
 # ╠═1a8e2e8d-97a9-4634-9121-0f33266227f8
-# ╟─e7906830-5dfd-42ea-ad8e-948b7a3138db
+# ╠═e7906830-5dfd-42ea-ad8e-948b7a3138db
 # ╠═9d38c13c-fbba-4fa2-b528-feae03551f54
 # ╠═aac89b26-bd5d-402e-9b1c-4ab6a70dfe51
-# ╠═2f9d86f3-ce3f-4a9c-a624-e0967a0ada70
-# ╠═92517b16-e8f2-4c16-847f-350c93aea60f
-# ╠═21d940fc-c258-4f01-a88b-71ff2109f80d
 # ╠═493b5c40-214a-41cd-aaaf-02609704ad49
 # ╠═2921145f-df6a-4b14-9faf-46a27e8f9057
 # ╠═facd440e-0e06-4824-9da0-cc7dd549db91
 # ╠═8c9d4dbf-c36e-4eee-b49f-ed0be110b55b
 # ╠═01d28d16-6acc-4209-893f-cd8cb730922d
+# ╠═859a9d38-f3d5-42ea-ba91-1673ded404ad
