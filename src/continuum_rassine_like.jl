@@ -586,7 +586,7 @@ function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3; λout::AV4 = λ, fwhm
  return (anchors=anchors_merged, continuum=continuum, f_filtered=f_smooth)
 end
 
-function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3, anchors::AV5; λout::AV4 = λ, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, T4<:Real, T5<:Integer, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}, AV5<:AbstractVector{T5}  }
+function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3, anchors::AV5; λout::AV4 = λ, smoothing_half_width::Integer = 6, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, T4<:Real, T5<:Integer, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}, AV5<:AbstractVector{T5}  }
  #clip_width_A = 1.0
  #clip_width_pix = clip_width_A/(λ[2]-λ[1])
  #@assert 1 <= clip_width_pix < Inf
@@ -658,8 +658,9 @@ function calc_continuum(λ::AA1, f_obs::AA2, var_obs::AA3; λout::AA4 = λ, fwhm
 end
 
 function calc_continuum(λ::AA1, f_obs::AA2, var_obs::AA3, anchors::AVV; λout::AA4 = λ,
-  #fwhm::Real = fwhm_sol, ν::Real =1.0,
-  #stretch_factor::Real = 5.0, merging_threshold::Real = 0.25, smoothing_half_width::Integer = 6, min_R_factor::Real = 100.0,
+   smoothing_half_width::Integer = 6,
+   #fwhm::Real = fwhm_sol, ν::Real =1.0,
+  #stretch_factor::Real = 5.0, merging_threshold::Real = 0.25, min_R_factor::Real = 100.0,
         orders_to_use::AbstractVector{<:Integer} = 1:size(λ,2), get_pixel_range::GPRT = GetPixelRangeFromWavelengthGrid(λ), verbose::Bool = false ) where {
         T1<:Real, T2<:Real, T3<:Real, T4<:Real, T5<:Integer, AA1<:AbstractArray{T1,2}, AA2<:AbstractArray{T2,2}, AA3<:AbstractArray{T3,2} , AA4<:AbstractArray{T4,2}, AVV<:AbstractVector{Vector{T5}}, GPRT<:AbstractGetPixelRangeFunctor }
   @assert size(λ) == size(f_obs) == size(var_obs)
