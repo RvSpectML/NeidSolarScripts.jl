@@ -367,10 +367,10 @@ pipeline_plan = PipelinePlan()
         println("# Couldn't find input FITS file: ", row.Filename)
         continue
     end
-    if !(isfile(row.continuum_filename)||islink(row.continuum_filename))
+    #= if !(isfile(row.continuum_filename)||islink(row.continuum_filename))
         println("# Couldn't find matching continuum file: ", row.continuum_filename)
         continue
-    end
+    end =#
     if verbose
         println("# Reading ", row.Filename, "(",i,"/",size(df_files_use,1),")")
         flush(stdout)
