@@ -214,7 +214,8 @@ if verbose   println("# Loading other packages 2/2")    end
  if args["line_list_filename"] != nothing
     line_list_filename = args["line_list_filename"]
  elseif !@isdefined line_list_filename
-     line_list_filename = joinpath(pkgdir(NeidSolarScripts),"data","solar_line_list_espresso.csv")
+     #line_list_filename = joinpath(pkgdir(NeidSolarScripts),"data","solar_line_list_espresso.csv")
+     line_list_filename = joinpath(pkgdir(NeidSolarScripts),"data","espresso+neid_mask_97_to_108.mas")
  end
  @assert isfile(line_list_filename) || islink(line_list_filename)
  if args["sed_filename"] != nothing
@@ -283,6 +284,7 @@ if verbose   println("# Loading other packages 2/2")    end
  @assert 0.7 <= args["nu_continuum"] <= 1.3  # Recommendations from Cretignier et al.
  args["apply_continuum_normalization"] = true   # TODO Remove after done testing
  #args["continuum_normalization_individually"] = false #  TODO Remove after done testing
+ args["recompute_line_weights"] = true
 
 if verbose println("# Reading manifest of files to process.")  end
   df_files  = CSV.read(manifest_filename, DataFrame)
@@ -447,7 +449,8 @@ pipeline_plan = PipelinePlan()
      println("# Computing continuum normalization from mean spectra.")
      local anchors, continuum, f_filtered
      if args["anchors_filename"] !=nothing
-         # TODO Read anchors and replace calc_continuum with version using them
+         @assert isfile(args["anchors_filename"]) && filesize(args["anchors_filename"])>0
+         anchors = load(args["anchors_filename"],"anchors")
      else
          if @isdefined sed
              (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, mean_clean_flux_sed_normalized, mean_clean_var_sed_normalized; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
@@ -498,8 +501,8 @@ line_width = line_width_50_default
     #line_list_filename = "G2.espresso.mas"
     linelist_for_ccf_fn_w_path = joinpath(pkgdir(EchelleCCFs),"data","masks",line_list_filename)
     line_list_espresso = prepare_line_list(linelist_for_ccf_fn_w_path, all_spectra, pipeline_plan, v_center_to_avoid_tellurics=ccf_mid_velocity,
-       Δv_to_avoid_tellurics = 2*max_bc+range_no_mask_change*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID2D()), orders_to_use=orders_to_use, recalc=true, verbose=true)
-    CSV.write(line_list_filename, line_list_espresso)
+       Δv_to_avoid_tellurics = 2*max_bc+range_no_mask_change*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID2D()), orders_to_use=#=orders_to_use=#56:108, recalc=true, verbose=true)
+    #CSV.write(line_list_filename, line_list_espresso)
  end
  file_hashes[line_list_filename] = bytes2hex(sha256(line_list_filename))
  #outputs["line_list_espresso"] = line_list_espresso
