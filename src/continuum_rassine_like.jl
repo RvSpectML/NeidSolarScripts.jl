@@ -247,6 +247,7 @@ function calc_continuum_anchors(λ::AV1, f::AV2; radius::AV3,
   min_λ = first(extrema_λ)
   extrema_f = extrema(f)
   normalization = (extrema_f[2]-extrema_f[1])/(extrema_λ[2]-extrema_λ[1])
+  normalization = (max_f-min_f)/(extrema_λ[2]-extrema_λ[1])
   normalization *= stretch_factor
   #= v1
   waves = λ.-λ'
