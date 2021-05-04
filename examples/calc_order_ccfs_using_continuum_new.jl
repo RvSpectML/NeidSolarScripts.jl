@@ -282,6 +282,7 @@ if verbose   println("# Loading other packages 2/2")    end
  @assert 10 <= args["min_rollingpin_r"] <= 1000 # arbitrary limits for now
  @assert 0.7 <= args["nu_continuum"] <= 1.3  # Recommendations from Cretignier et al.
  args["apply_continuum_normalization"] = true   # TODO Remove after done testing
+ #args["continuum_normalization_individually"] = false #  TODO Remove after done testing
 
 if verbose println("# Reading manifest of files to process.")  end
   df_files  = CSV.read(manifest_filename, DataFrame)
@@ -404,7 +405,7 @@ pipeline_plan = PipelinePlan()
         var_norm = spec.var
     end
 
-    if args["apply_continuum_normalization"] && args["continuum_normalization_individually"]
+    if args["apply_continuum_normalization"]==true && args["continuum_normalization_individually"]==true
         local anchors, continuum, f_filtered
         if args["anchors_filename"] != nothing
             @assert isfile(args["anchors_filename"]) && filesize(args["anchors_filename"])>0
@@ -442,19 +443,22 @@ pipeline_plan = PipelinePlan()
  #mean_clean_flux_sed_normalized ./= mean_clean_flux_continuum_normalized_weight_sum
  #mean_clean_flux_continuum_normalized ./= mean_clean_flux_continuum_normalized_weight_sum
 
-if args["apply_continuum_normalization"] && !args["continuum_normalization_individually"]
+ if args["apply_continuum_normalization"]==true && !(args["continuum_normalization_individually"] == true)
      println("# Computing continuum normalization from mean spectra.")
      local anchors, continuum, f_filtered
-     if @isdefined sed
-         (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, mean_clean_flux_sed_normalized, mean_clean_var_sed_normalized; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
-            stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
-            orders_to_use = orders_to_use_for_continuum, verbose = false )
-    else
-        (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, mean_clean_flux, mean_clean_var; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
-           stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
-           orders_to_use = orders_to_use_for_continuum, verbose = false )
+     if args["anchors_filename"] !=nothing
+         # TODO Read anchors and replace calc_continuum with version using them
+     else
+         if @isdefined sed
+             (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, mean_clean_flux_sed_normalized, mean_clean_var_sed_normalized; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
+                stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
+                orders_to_use = orders_to_use_for_continuum, verbose = false )
+        else
+            (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, mean_clean_flux, mean_clean_var; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
+                stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
+                orders_to_use = orders_to_use_for_continuum, verbose = false )
+        end
     end
-    #push!(normalization_anchors_list, anchors)
     normalization_anchors_list = anchors
 
     for (i,row) in enumerate(eachrow(df_files_use))
@@ -469,18 +473,7 @@ if args["apply_continuum_normalization"] && !args["continuum_normalization_indiv
         end
     end
  end
-true
 
- #= TODO IMPLEMENT
- if args["apply_continuum_normalization"] && !arg["continuum_normalization_individually"]
-     if args["anchors_filename"]
-         # TODO Read anchors and replace calc_continuum with version using them
-     end
-     (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, f_norm, var_norm; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
-         stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
-         orders_to_use = orders_to_use_for_continuum, verbose = false )
- end
- =#
  order_list_timeseries = extract_orders(all_spectra, pipeline_plan,  orders_to_use=orders_to_use, remove_bad_chunks=false, recalc=true )
 
 
