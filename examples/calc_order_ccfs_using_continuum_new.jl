@@ -343,7 +343,7 @@ if verbose println(now()) end
 
 if @isdefined(sed_filename)
    sed = Continuum.read_master_sed_neid(filename=sed_filename)
-   min_order_for_continuum = 12 # min_order(NEID2D())
+   min_order_for_continuum = min_order(NEID2D()) # 12
    max_order_for_continuum = max_order(NEID2D())
    orders_to_use_for_continuum = min_order_for_continuum:max_order_for_continuum
 end
