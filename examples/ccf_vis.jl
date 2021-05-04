@@ -24,6 +24,7 @@ begin
 	using PlutoUI
 	using Plots, ColorSchemes
 	using Statistics, NaNMath
+	using Polynomials
 end
 
 # ╔═╡ 5313b674-a897-11eb-3820-218f26a14d4d
@@ -42,6 +43,7 @@ begin
 	num_v = size(data["order_ccfs"],1)
 	num_pix = size(data["mean_clean_flux"],1)
 	num_pix_continuum = size(data["mean_clean_flux_continuum_normalized"],1)
+	date_str = match(r"neidL1_(\d+)T\d+\.fits",data["manifest"].Filename[1]).captures[1]
 	size(data["order_ccfs"])
 end
 
@@ -301,7 +303,7 @@ begin
 end
 
 # ╔═╡ e7541e93-8b7a-4c26-901e-d887931b8103
-order_idx_for_rvs = vcat(1:5,6,8,9,10,17,18,21,23,28)
+order_idx_for_rvs = vcat(1:5,6,8,9,10,17,21)
 #order_idx_for_rvs = vcat(1:11,19:21)
 #order_idx_for_rvs = vcat(1:5,8:10,19:21)
 
@@ -323,12 +325,27 @@ end;
 # ╔═╡ 2f9d86f3-ce3f-4a9c-a624-e0967a0ada70
 std(rvs_binned)
 
+# ╔═╡ 92517b16-e8f2-4c16-847f-350c93aea60f
+
+
+# ╔═╡ 21d940fc-c258-4f01-a88b-71ff2109f80d
+daily_slope = Polynomials.fit(t_binned,rvs_binned,1)[1]
+
+# ╔═╡ 493b5c40-214a-41cd-aaaf-02609704ad49
+daily_fit = Polynomials.fit(data["manifest"].bjd.-mean(data["manifest"].bjd),rvs,1)
+
+# ╔═╡ 2921145f-df6a-4b14-9faf-46a27e8f9057
+#std(rvs.-daily_fit.(data["manifest"].bjd.-mean(data["manifest"].bjd))), 
+binned_rms_minus_linear = std(rvs_binned.-daily_fit.(t_binned.-mean(data["manifest"].bjd)))
+
 # ╔═╡ facd440e-0e06-4824-9da0-cc7dd549db91
 begin
-	plt11 = scatter(data["manifest"].bjd.-mean(data["manifest"].bjd),rvs,yerr=σ_rvs, label=:none)
-	scatter!(plt11,data["manifest"].bjd.-mean(data["manifest"].bjd),rvs_binned, label="Binned")
+	plt11 = scatter(data["manifest"].bjd.-mean(data["manifest"].bjd),rvs,yerr=σ_rvs, ms=2.0,label=:none)
+	scatter!(plt11,t_binned.-mean(data["manifest"].bjd),rvs_binned, ms=4,label="Binned")
+	plot!(plt11,data["manifest"].bjd.-mean(data["manifest"].bjd),daily_fit.(data["manifest"].bjd.-mean(data["manifest"].bjd)),label="Daily slope = " * string(round(Polynomials.fit(t_binned,rvs_binned,1)[1]/24,digits=3)) * "m/s/hr")
 	xlabel!(plt11,"Time (d)")
 	ylabel!(plt11,"RV (m/s)")
+	title!(plt11,date_str * "  RMS_5min-line = " * string(round(binned_rms_minus_linear,digits=3)) * "m/s")
 	plt11
 end
 
@@ -387,6 +404,10 @@ end
 # ╠═9d38c13c-fbba-4fa2-b528-feae03551f54
 # ╠═aac89b26-bd5d-402e-9b1c-4ab6a70dfe51
 # ╠═2f9d86f3-ce3f-4a9c-a624-e0967a0ada70
+# ╠═92517b16-e8f2-4c16-847f-350c93aea60f
+# ╠═21d940fc-c258-4f01-a88b-71ff2109f80d
+# ╠═493b5c40-214a-41cd-aaaf-02609704ad49
+# ╠═2921145f-df6a-4b14-9faf-46a27e8f9057
 # ╠═facd440e-0e06-4824-9da0-cc7dd549db91
 # ╠═8c9d4dbf-c36e-4eee-b49f-ed0be110b55b
 # ╠═01d28d16-6acc-4209-893f-cd8cb730922d
