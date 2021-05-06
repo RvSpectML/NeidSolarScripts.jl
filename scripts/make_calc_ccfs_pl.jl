@@ -21,9 +21,9 @@ end
 # ╔═╡ 0cbdbb36-4874-4862-823f-6bf0fbd4e60c
 begin
 	neid_data_path = "/gpfs/group/ebf11/default/ebf11/neid_solar/data/"
-	proc_version_path = "v0.7-fixedflatfielding2/solar"
+	proc_version_path = "v0.7develop20210501/solar"
 	path_start = joinpath(neid_data_path,proc_version_path)
-	output_path_base = "/gpfs/group/ebf11/default/ebf11/neid_solar/data/outputs"
+	output_path_base = "/gpfs/group/ebf11/default/ebf11/neid_solar/data/outputs2"
 	proj_dir = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl"
 	script = joinpath(proj_dir,"examples","calc_order_ccfs_using_continuum_new.jl")
 end
@@ -55,11 +55,14 @@ end
 
 # ╔═╡ d48ad3e0-14db-47b4-84db-4db10e1f0114
 begin
-	num_threads = 4
-	min_order = 4
-	max_order = 118
-	line_list_filename = joinpath(ENV["JULIA_DEPOT_PATH"],"dev/EchelleCCFs/data/masks","espresso+neid_mask_97_to_108.mas")
-	#line_list_filename = joinpath(pkgdir(EchelleCCFs),"data/masks","espresso+neid_mask_97_to_108.mas")
+	num_threads = 1
+	min_order = 56
+	max_order = 108
+	#line_list_filename = joinpath(ENV["JULIA_DEPOT_PATH"],"dev/EchelleCCFs/data/masks","espresso+neid_mask_97_to_108.mas")
+        #line_list_filename = joinpath(pkgdir(EchelleCCFs),"data/masks","espresso+neid_mask_97_to_108.mas")
+        line_list_filename = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/scripts/linelist_20210208.csv"
+	sed_filename = joinpath(proj_dir,"data", "neidMaster_HR_SmoothLampSED_20210101.fits")	
+        anchors_filename = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/scripts/anchors_20210208.jld2"
 end
 
 # ╔═╡ 8366a29a-1857-410f-aea3-87049e6248f6
@@ -102,8 +105,8 @@ cd \$PBS_O_WORKDIR
 #cd $proj_dir
 
 # Run the job itself
-echo ~/julia --project=$proj_dir -t $num_threads $script $input_fn $output_fn --line_list_filename $line_list_filename  --orders_to_use=$min_order $max_order --overwrite
-~/julia --project=$proj_dir -t $num_threads $script $input_fn $output_fn --line_list_filename $line_list_filename  --orders_to_use=$min_order $max_order --overwrite
+echo ~/julia --project=$proj_dir -t $num_threads $script $input_fn $output_fn --line_list_filename $line_list_filename  --sed_filename $sed_filename  --orders_to_use=$min_order $max_order --overwrite
+~/julia --project=$proj_dir -t $num_threads $script $input_fn $output_fn --line_list_filename $line_list_filename  --sed_filename $sed_filename  --anchors_filename $anchors_filename  --orders_to_use=$min_order $max_order --apply_continuum_normalization  --overwrite
 
 # Finish up
 echo Job Ended at `date`
@@ -149,10 +152,20 @@ cd \$PBS_O_WORKDIR
 		output_fn = df[i,"output_filename"]
 		pbs_cmd_str = """
 # Run the job itself
-echo ~/julia --project=$proj_dir -t $num_threads $script $input_fn $output_fn --line_list_filename $line_list_filename  --orders_to_use=$min_order $max_order --overwrite
-~/julia --project=$proj_dir -t $num_threads $script $input_fn $output_fn --line_list_filename $line_list_filename  --orders_to_use=$min_order $max_order --overwrite
+~/julia --project=$proj_dir -t $num_threads $script $input_fn $output_fn --line_list_filename $line_list_filename  --sed_filename $sed_filename  --anchors_filename $anchors_filename  --orders_to_use=$min_order $max_order --apply_continuum_normalization  --overwrite
+
 """
 		pbs_str = pbs_str * pbs_cmd_str
+
+                # If want to do 2
+                output2_fn = replace(output_fn,"daily_ccfs"=>"daily_ccfs_norm=sed")
+		pbs_cmd_str = """
+# Run the job itself
+~/julia --project=$proj_dir -t $num_threads $script $input_fn $output2_fn --line_list_filename $line_list_filename  --sed_filename $sed_filename  --anchors_filename $anchors_filename  --orders_to_use=$min_order $max_order 
+
+"""
+		pbs_str = pbs_str * pbs_cmd_str
+
 	end
 pbs_ftr_str = """
 	# Finish up
@@ -201,8 +214,8 @@ end # submit_calc_ccfs.sh
 # ╔═╡ 487c2c86-e56f-4823-be3c-05c076dbbe89
 
 open("submit_calc_ccfs_multi.sh","w") do f_submit
-
-for i in 1:4:size(df,1)
+files_per_jobs = 4
+for i in reverse(1:files_per_jobs:size(df,1))
 	#if row.num_lines <= 1 continue end
    #=
     if isfile(joinpath(row.output_dir, "manifest.csv"))  
@@ -213,7 +226,7 @@ for i in 1:4:size(df,1)
     #m = match(r"(\d+)$", dirname(row.manifest_filename))
     #dir = m.captures[1] 
 
-    pbs_scr = make_pbs_multi_scr(proj_dir=proj_dir, script=script, df=df, min_row=i, max_row=min(i+3,size(df,1)), job_name = "ccfs_"*string(i), num_threads=4)
+    pbs_scr = make_pbs_multi_scr(proj_dir=proj_dir, script=script, df=df, min_row=i, max_row=min(i+files_per_jobs-1,size(df,1)), job_name = "ccfs_"*string(i), num_threads=num_threads)
 
     #println("Created script: ")
     #println(pbs_scr)
