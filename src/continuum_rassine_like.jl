@@ -50,7 +50,8 @@ function normalize_by_sed(λ::AA1, flux::AA2, var::AA3, sed::AA4; poly_order::In
 end
 
 function calc_mean_snr( flux::AV1, var::AV2 ) where { T1<:Real, T2<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2} }
-   return NaNMath.mean(flux./sqrt.(var))
+   idx_bad = isnan.(flux) .| isnan.(var) .| (var .<=0.0) 
+   return mean(flux[.!idx_bad]./sqrt.(var[.!idx_bad]))
 end
 
 function smooth(f::AV2; half_width::Integer = 6 ) where {  T2<:Real, AV2<:AbstractVector{T2} }

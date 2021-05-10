@@ -282,9 +282,9 @@ if verbose   println("# Loading other packages 2/2")    end
  @assert 1.0 <= args["fwhm_continuum"] <= 30.0   # km/s  arbitrary limits for now
  @assert 10 <= args["min_rollingpin_r"] <= 1000 # arbitrary limits for now
  @assert 0.7 <= args["nu_continuum"] <= 1.3  # Recommendations from Cretignier et al.
- args["apply_continuum_normalization"] = true   # TODO Remove after done testing
+ #args["apply_continuum_normalization"] = true   # TODO Remove after done testing
  #args["continuum_normalization_individually"] = false #  TODO Remove after done testing
- args["recompute_line_weights"] = true
+ #args["recompute_line_weights"] = true  # TODO Remove after done testing
 
 if verbose println("# Reading manifest of files to process.")  end
   df_files  = CSV.read(manifest_filename, DataFrame)
