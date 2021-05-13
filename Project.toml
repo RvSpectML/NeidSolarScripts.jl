@@ -40,6 +40,7 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 
 [compat]
 CSV = "0.7, 0.8"
+DSP = "0.6"
 DataFrames = "0.20, 0.21, 0.22, 0.23, 0.24, 1.1"
 EchelleInstruments = "0.2"
 FileIO = "1.4"
