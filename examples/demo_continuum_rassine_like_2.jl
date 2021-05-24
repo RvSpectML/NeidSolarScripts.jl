@@ -108,15 +108,12 @@ order_idx = 110
  ylims!(0.,2.0)
 true
 
-
- function get_pixel_range_for_continuum(λ::AA1, ord_idx::Integer) where { T1<:Real, AA1<:AbstractArray{T1,2} }
-   inst = get_inst(spec)
-   pix = min_pixel_in_order(get_inst(spec)):max_pixel_in_order(get_inst(spec))
- end
  #f_norm = spec.flux ./sed
  #xlabel!("λ")
  #ylabel!("Flux/SED")
  #savefig("fig.png")
+
+get_pixel_range_for_continuum = GetPixelRangeFunctor(NEID2D())
 
 #f_norm = spec.flux
 @time (anchors, continuum_output, f_filtered) = Continuum.calc_continuum(spec.λ,f_norm,var_norm,stretch_factor=5.0, ν=1.0,
