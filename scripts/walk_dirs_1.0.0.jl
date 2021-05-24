@@ -83,12 +83,12 @@ end
 open("submit_make_manifests.sh","w") do f_submit
 
 for row in eachrow(df)
-   #=
+   # #=
     if isfile(joinpath(row.output_dir, "manifest.csv"))  
        println("# Skipping ", row.output_dir)
        continue 
     end
-   =#
+   # =#
     m = match(r"(\d+)$", row.input_dir)
     dir = m.captures[1] 
 
