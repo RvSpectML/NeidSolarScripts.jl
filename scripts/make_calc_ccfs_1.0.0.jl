@@ -237,7 +237,7 @@ end # submit_calc_ccfs.sh
 # ╔═╡ 487c2c86-e56f-4823-be3c-05c076dbbe89
 
 open("submit_calc_ccfs_multi.sh","w") do f_submit
-files_per_jobs = 8
+files_per_jobs = 1
 for i in reverse(1:files_per_jobs:size(df,1))
 	#if row.num_lines <= 1 continue end
    #=
@@ -249,7 +249,7 @@ for i in reverse(1:files_per_jobs:size(df,1))
     #m = match(r"(\d+)$", dirname(row.manifest_filename))
     #dir = m.captures[1] 
 
-    pbs_scr = make_pbs_multi_scr(proj_dir=proj_dir, script=script, df=df, min_row=i, max_row=min(i+files_per_jobs-1,size(df,1)), job_name = "ccfs_"*string(i), num_threads=num_threads)
+    pbs_scr = make_pbs_multi_scr(proj_dir=proj_dir, script=script, df=df, min_row=i, max_row=min(i+files_per_jobs-1,size(df,1)), job_name = "ccfs_"*string(i) ) # , num_threads=num_threads)
 
     #println("Created script: ")
     #println(pbs_scr)

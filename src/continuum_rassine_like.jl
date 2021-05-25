@@ -34,8 +34,15 @@ function normalize_by_sed(λ::AA1, flux::AA2, var::AA3, sed::AA4; poly_order::In
       var_obs = view(var,pix_mask,order_idx)
       if poly_order >= 1 && half_width >=1
         upper_envelope = calc_rolling_quantile(lambda,f_obs./sed_view, half_width=half_width, quantile=quantile)
-        coeff = Polynomials.fit(lambda,upper_envelope,poly_order,weights=sed_view.^2 ./var_obs)
-        polyfit = coeff.(view(λ,:,order_idx))
+        try 
+           coeff = Polynomials.fit(lambda,upper_envelope,poly_order,weights=sed_view.^2 ./var_obs)
+           polyfit = coeff.(view(λ,:,order_idx))
+        catch
+           println("# Warning:  Polynomial fit to continuum for order index ", order_idx, " failed (order = ", poly_order, ".")
+           #println("#           size(lambda) = ", size(lambda), " size(upper_envelope) = ", size(upper_envelope), " size(weights) = ", size(sed_view.^2 ./var_obs))
+           #println("#           ", sum(isnan.(lambda)), ",  ", sum(isnan.(upper_envelope)), ",  ", sum(isnan.(sed_view)), ",  ", sum(isnan.(var_obs)), ",  ", sum(isinf.(sed_view.^2 ./var_obs)))
+           polyfit = 1
+        end
       else
         if verbose  println("# Skipping polynomial fit to flux/sed for order index ", order_idx)  end
         polyfit = 1
@@ -367,6 +374,8 @@ end
 function calc_continuum_from_anchors_linear( λ::AV1, f::AV2, anchors::AV3; λout::AV4 = λ,
               verbose::Bool = false ) where {
                 T1<:Real, T2<:Real, T3<:Integer, T4<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}  }
+  @assert length(anchors) >= 2 
+  #if length(anchors) <= 1   return ones(size(λout))  end
   interp_linear = LinearInterpolation(f[anchors],λ[anchors])
   function extrap(x::Real)
     if x<first(interp_linear.t)
@@ -394,7 +403,9 @@ function calc_continuum_from_anchors_hybrid( λ::AV1, f::AV2, anchors::AV3; λou
               verbose::Bool = false ) where {
                 T1<:Real, T2<:Real, T3<:Integer, T4<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}  }
   output = similar(λout)
-  if length(anchors) < 9
+  if length(anchors) < 2
+    output .= ones(size(λout))
+  elseif length(anchors) < 9
     output .= calc_continuum_from_anchors_linear( λ, f, anchors, λout=λout,verbose=verbose)
   else
     λmin = λ[anchors[4]]
