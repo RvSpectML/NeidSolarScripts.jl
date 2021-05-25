@@ -69,11 +69,14 @@ begin
         #line_list_filename7 = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/data/VALD_species=all_depthcutoff=0.05_overlapcutoff=3e-05_allowBlends=0_badLineFilter=ESPRESSOG2_rejectTelluricSlope=0.0_waves=Reiners_depths=original_nbin=1_binparam=depth_n=0.csv"
         #line_list_filename8 = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/data/VALD_species=all_depthcutoff=0.05_overlapcutoff=6e-05_allowBlends=0_badLineFilter=20210115_solar_rejectTelluricSlope=0.0_waves=Reiners_depths=original_nbin=1_binparam=depth_n=0.csv"
         #line_list_filename9 = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/data/VALD_species=all_depthcutoff=0.05_overlapcutoff=6e-05_allowBlends=0_badLineFilter=ESPRESSOG2_rejectTelluricSlope=0.0_waves=Reiners_depths=original_nbin=1_binparam=depth_n=0.csv"
+        #line_list_filename_list = [line_list_filename1 ]
         line_list_filename_list = [line_list_filename1, line_list_filename2 ]
         #line_list_filename_list = [line_list_filename1, line_list_filename2, line_list_filename3, line_list_filename4, line_list_filename5, line_list_filename6, line_list_filename7, line_list_filename8 ]
 	sed_filename = joinpath(proj_dir,"data", "neidMaster_HR_SmoothLampSED_20210101.fits")	
         #anchors_filename = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/scripts/anchors_20210208.jld2"
-        anchors_filename = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/scripts/anchors_57_58.jld2"
+        #anchors_filename = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/scripts/anchors_57_58.jld2"
+        anchors_filename = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/scripts/anchors_20210305.jld2"
+
 end
 
 # ╔═╡ 8366a29a-1857-410f-aea3-87049e6248f6

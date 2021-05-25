@@ -577,7 +577,7 @@ function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3; λout::AV4 = λ, fwhm
  if verbose println("# Found ", length(anch_orig), " potential anchors." )  end
  anch_orig = idx_local_maxima[anch_orig]
  anchor_vals = f_smooth[anch_orig]
- if length(anch_orig) >= 7  # 2n+1, for replace_edge_anchor_vals!
+ if length(anch_orig) >= 8  # 2n+1, for replace_edge_anchor_vals!
    replace_edge_anchor_vals!(anchor_vals)
    anch_mask = find_clean_anchors_by_slope(anch_orig,anchor_vals, threshold = 0.95, verbose=verbose)
    if verbose println("# After rejected high-slope anchors ", sum(anch_mask), " anchors left." )  end
