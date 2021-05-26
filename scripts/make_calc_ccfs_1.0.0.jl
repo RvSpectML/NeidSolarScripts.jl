@@ -69,8 +69,9 @@ begin
         #line_list_filename7 = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/data/VALD_species=all_depthcutoff=0.05_overlapcutoff=3e-05_allowBlends=0_badLineFilter=ESPRESSOG2_rejectTelluricSlope=0.0_waves=Reiners_depths=original_nbin=1_binparam=depth_n=0.csv"
         #line_list_filename8 = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/data/VALD_species=all_depthcutoff=0.05_overlapcutoff=6e-05_allowBlends=0_badLineFilter=20210115_solar_rejectTelluricSlope=0.0_waves=Reiners_depths=original_nbin=1_binparam=depth_n=0.csv"
         #line_list_filename9 = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/data/VALD_species=all_depthcutoff=0.05_overlapcutoff=6e-05_allowBlends=0_badLineFilter=ESPRESSOG2_rejectTelluricSlope=0.0_waves=Reiners_depths=original_nbin=1_binparam=depth_n=0.csv"
-        #line_list_filename_list = [line_list_filename1 ]
-        line_list_filename_list = [line_list_filename1, line_list_filename2 ]
+        line_list_filename_list = [line_list_filename1 ]
+        #line_list_filename_list = [line_list_filename1, line_list_filename2 ]
+        #line_list_filename_list = [line_list_filename3 ]
         #line_list_filename_list = [line_list_filename1, line_list_filename2, line_list_filename3, line_list_filename4, line_list_filename5, line_list_filename6, line_list_filename7, line_list_filename8 ]
 	sed_filename = joinpath(proj_dir,"data", "neidMaster_HR_SmoothLampSED_20210101.fits")	
         #anchors_filename = "/gpfs/group/ebf11/default/ebf11/neid_solar/code/NeidSolarScripts.jl/scripts/anchors_20210208.jld2"
@@ -205,6 +206,8 @@ end
 
 # ╔═╡ 962d7e9e-4fdd-4080-82bf-f0175002ca19
 
+#=
+# TODO:  Fix.  Currently, this part of script broken: results in each file ccfs_*.pbs file having all days instead of just 1
 open("submit_calc_ccfs.sh","w") do f_submit
 
 for row in eachrow(df)
@@ -234,7 +237,7 @@ for row in eachrow(df)
 end
 
 end # submit_calc_ccfs.sh
-
+=#
 
 
 # ╔═╡ 487c2c86-e56f-4823-be3c-05c076dbbe89
