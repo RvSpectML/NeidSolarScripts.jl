@@ -184,7 +184,7 @@ println("# Parsing arguments...")
 if verbose   println("# Loading other packages 2/2")    end
  using CSV, DataFrames, Query, Dates
  using JLD2, FileIO, SHA
- #using StatsBase, Statistics
+ using StatsBase, Statistics, NaNMath
 
  # Filename arguments
  @assert isfile(args["manifest"]) || islink(args["manifest"])
@@ -311,7 +311,7 @@ if verbose println("# Reading manifest of files to process.")  end
   elseif !@isdefined max_snr
       df_files_tmp = df_files |>
         @filter( args["target"] == nothing || _.target == args["target"] ) |> DataFrame
-      max_snr = maximum(sum.(df_files_tmp.order_snrs))
+      max_snr = maximum(NaNMath.sum.(df_files_tmp.order_snrs))
   end
   @assert 0 < max_snr < Inf
 
