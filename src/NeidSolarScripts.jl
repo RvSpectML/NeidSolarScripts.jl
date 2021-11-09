@@ -11,6 +11,10 @@ end
 
 using Dates, LinearAlgebra
 
+# For reading data from pyrheliometer files
+include("pyroheliometer.jl")
+export Pyroheliometer
+
 # For computing effects of apparent solar rotation rate
 include("solar_rotation.jl")
 export SolarRotation
