@@ -6,6 +6,7 @@ verbose = true
  using EchelleInstruments#, EchelleInstruments.NEID
  using RvSpectML
  if verbose println("# Loading NeidSolarScripts")    end
+ using SunAsAStar
  using NeidSolarScripts
  println("# Loading other packages 1/2")
  using ArgParse
@@ -299,14 +300,17 @@ if verbose println("# Reading manifest of files to process.")  end
     if args["target"] == "Sun" || args["target"] == "Solar"
       @assert hasproperty(df_files,:alt_sun)  # TODO: Compute if not avaliable?
       @assert hasproperty(df_files,:Δfwhm²)   # TODO: Compute if not avaliable?
-      df_files[!,"solar_hour_angle"] = NeidSolarScripts.SolarRotation.get_solar_hour_angle(df_files.bjd,obs=:WIYN)
-      if eltype(df_files[!,:order_snrs]) == String   # TODO: Compute if not avaliable?
+      df_files[!,"solar_hour_angle"] = SolarRotation.get_solar_hour_angle(df_files.bjd,obs=:WIYN)
+      #if eltype(df_files[!,:order_snrs]) == String   # TODO: Compute if not avaliable?
     end
+    #=
     @assert hasproperty(df_files,:order_snrs)
         df_files[!,:order_snrs] = map(i->parse.(Float64,split(df_files[i,:order_snrs][2:end-1],',')),1:size(df_files,1))
     end
     @assert eltype(df_files[!,:order_snrs]) == Vector{Float64}
+    =#
 
+  #=
   if  args["max_snr"] != nothing
       max_snr = args["max_snr"]
   elseif !@isdefined max_snr
@@ -315,6 +319,7 @@ if verbose println("# Reading manifest of files to process.")  end
       max_snr = maximum(NaNMath.sum.(df_files_tmp.order_snrs))
   end
   @assert 0 < max_snr < Inf
+  =#
 
   @assert args["max_airmass"] == nothing || 1 < args["max_airmass"] <= 10  # not tested beyond 10
   @assert args["min_snr_factor"] == nothing || 0 <= args["min_snr_factor"] < 1
@@ -328,7 +333,8 @@ if verbose println("# Reading manifest of files to process.")  end
     @filter( args["max_solar_hour_angle"] == nothing || abs(_.solar_hour_angle) <= args["max_solar_hour_angle"] ) |>
     @filter( args["start_time"] == nothing || Time(julian2datetime(_.bjd)) >= start_time ) |>
     @filter( args["stop_time"] == nothing || Time(julian2datetime(_.bjd)) <= stop_time ) |> # TODO for other instruments may need to deal wtih cross end of 24 UTC
-    @filter( args["min_snr_factor"] == nothing || sum(_.order_snrs) >= args["min_snr_factor"] * max_snr ) |>
+    # TODO: Replace to use expmeter or pyrheliometer data
+    # @filter( args["min_snr_factor"] == nothing || sum(_.order_snrs) >= args["min_snr_factor"] * max_snr ) |>
     @take(args["max_num_spectra"] ) |> @orderby(_.bjd) |>
     DataFrame
   println("# Found ", size(df_files_use,1), " files of ",  size(df_files,1), " to process.")
@@ -337,7 +343,7 @@ if verbose println("# Reading manifest of files to process.")  end
 df_files_cleanest = df_files_use |>
     @filter( _.airmass <= 2.0 ) |>
     @filter( abs(_.solar_hour_angle) <= 1 ) |>
-    @filter( sum(_.order_snrs) >= 0.9 * max_snr ) |>
+    #@filter( sum(_.order_snrs) >= 0.9 * max_snr ) |>
     @take(args["max_num_spectra"] ) |>
     DataFrame
   println("# Found ", size(df_files_cleanest,1), " files considered clean.")
@@ -347,10 +353,10 @@ if verbose println(now()) end
 
 if @isdefined(sed_filename)
    sed = Continuum.read_master_sed_neid(filename=sed_filename)
-   min_order_for_continuum = min_order(NEID2D()) # 12
-   max_order_for_continuum = max_order(NEID2D())
-   orders_to_use_for_continuum = min_order_for_continuum:max_order_for_continuum
 end
+min_order_for_continuum = min_order(NEID2D()) # 12
+max_order_for_continuum = max_order(NEID2D())
+orders_to_use_for_continuum = min_order_for_continuum:max_order_for_continuum
 
 pipeline_plan = PipelinePlan()
  if verbose println("# Reading data files.")  end

@@ -15,6 +15,7 @@ using Dates, LinearAlgebra
 include("pyroheliometer.jl")
 export Pyroheliometer
 
+#=
 # For computing effects of apparent solar rotation rate
 include("solar_rotation.jl")
 export SolarRotation
@@ -25,6 +26,7 @@ export CalculateFWHMDifference_SolarRotation_from_long_lat_alt, CalculateFWHMDif
 # For computing differential extinction
 include("diff_solar_extinction.jl")
 export DifferentialExtinction
+=#
 
 #include("continuum_AFS.jl")
 #export Continuum_AFS

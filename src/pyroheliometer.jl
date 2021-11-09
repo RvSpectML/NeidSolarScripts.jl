@@ -1,4 +1,7 @@
 module Pyroheliometer
+using Dates
+using DataFrames, CSV
+using FITSIO
 
 function make_pyrohelio_file_dataframe(pyro_path::String)
 	pyro_files = readdir(pyro_path)

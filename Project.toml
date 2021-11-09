@@ -41,6 +41,7 @@ Scalpels = "17b2198d-36ea-452c-8144-ba1790da919f"
 SortFilters = "d6dedbf8-78c7-4e81-bd5f-fe48695b798a"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+SunAsAStar = "1bd1a468-645d-4223-8813-48273918c0e0"
 
 [compat]
 CSV = "0.7, 0.8"

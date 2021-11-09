@@ -5,8 +5,11 @@ verbose = true
  using RvSpectML
  if verbose println("# Loading NeidSolarScripts")    end
  using NeidSolarScripts
- using NeidSolarScripts.SolarRotation
- using NeidSolarScripts.DifferentialExtinction
+ using SunAsAStar
+ using SunAsAStar.SolarRotation
+ using SunAsAStar.DifferentialExtinction
+# using NeidSolarScripts.SolarRotation
+# using NeidSolarScripts.DifferentialExtinction
  if verbose   println("# Loading other packages")    end
  using CSV, DataFrames, Query, Dates
  #using StatsBase, Statistics, Dates
@@ -42,16 +45,18 @@ if isfile(manifest_filename) || islink(manifest_filename)
     @assert hasproperty(df_files,:alt_sun)
     @assert hasproperty(df_files,:Δv_diff_ext)
     @assert hasproperty(df_files,:Δfwhm²)
+    #=
     @assert hasproperty(df_files,:order_snrs)
     if eltype(df_files[!,:order_snrs]) == String
         df_files[!,:order_snrs] = map(i->parse.(Float64,split(df_files[i,:order_snrs][2:end-1],',')),1:size(df_files,1))
     end
     @assert eltype(df_files[!,:order_snrs]) == Vector{Float64}
+    =#
     println("# Required fields present ", size(df_files), ".  No need to regenerate manifest.")
     can_skip_generating_manifest = true
-    if any(isnan.(df_files[!,:order_snrs])) || 
-       any(isnan.(df_files[!,:Δfwhm²]))    ||
+    if any(isnan.(df_files[!,:Δfwhm²]))    ||
        any(isnan.(df_files[!,:Δv_diff_ext]))   
+       # any(isnan.(df_files[!,:order_snrs])) 
           can_skip_generating_manifest = false
     end
 else
@@ -64,6 +69,7 @@ if can_skip_generating_manifest && !create_missing_continuum_files
 end
 
 df_files = NEID.make_manifest(joinpath(neid_data_path, target_subdir))
+df_pyrohelio_files = Pyroheliometer.make_pyrohelio_file_dataframe(pyrohelio_data_path)
 
 calibration_target_substrings = ["Etalon","LFC","ThArS","LDLS","FlatBB"]
 df_files_calib = df_files |>
@@ -75,19 +81,32 @@ CSV.write(manifest_calib_filename, df_files_calib)
 
 
 df_files_obs = df_files |>
+    @filter( _.target == "Sun" ) |>
     @filter( !any(map(ss->contains(_.target,ss),calibration_target_substrings)) ) |>
+    # @take(10) |> 
     DataFrame
 
+#=
 df_files_use = df_files_obs |>
       @filter( _.target == fits_target_str ) |>
       #@filter(bjd_first_good <= _.bjd < bjd_last_good) |>
       #@filter( is_good_day(_.Filename) ) |>
       #@take(max_spectra_to_use) |>
       DataFrame
+=#
 
 if fits_target_str == "Sun" || fits_target_str == "Solar"
-    df_files_use[!,:alt_sun] = calc_solar_alt.(df_files_use.bjd,obs=:WIYN)
-    df_files_use[!,:airmass] = DifferentialExtinction.f_airmass.(DifferentialExtinction.f_z.(deg2rad.(df_files_use.alt_sun)))
+    df_pyrohelio_obs = DataFrame(map(f->Pyroheliometer.get_pyrohelio_summary(df_pyrohelio_files, f), df_files_obs.Filename  ))
+    df_files_obs.filename = basename.(df_files_obs.Filename)
+    df_files_use = leftjoin(df_files_obs, df_pyrohelio_obs, on=:filename, makeunique=true)
+
+    df_sol = DataFrame(get_solar_info.(df_files_use.bjd,obs=:WIYN))
+    df_files_use[!,:alt_sun] = df_sol[!,:alt]
+    df_files_use[!,:airmass] = df_sol[!,:airmass]
+    df_files_use[!,:hour_angle] = df_sol[!,:hour_angle]
+    df_files_use[!,:sol_dist] = df_sol[!,:sol_dist_au]
+    #df_files_use[!,:alt_sun] = calc_solar_alt.(df_files_use.bjd,obs=:WIYN)
+    #df_files_use[!,:airmass] = DifferentialExtinction.f_airmass.(DifferentialExtinction.f_z.(deg2rad.(df_files_use.alt_sun)))
     println("# Computing differential extinction")
     try
         df_files_use[!,:Δv_diff_ext] = calc_Δv_diff_extinction.(df_files_use.bjd, obs=:WIYN)
@@ -102,7 +121,17 @@ if fits_target_str == "Sun" || fits_target_str == "Solar"
        end
     end
     println("# FWHM effect")
-    df_files_use[!,:Δfwhm²] = CalculateFWHMDifference_SolarRotation_from_obs.(df_files_use.bjd,obs=:WIYN)
+    #df_files_use[!,:Δfwhm²] = CalculateFWHMDifference_SolarRotation_from_obs(df_files_use.bjd,obs=:WIYN)
+    df_files_use[!,:Δfwhm²]= calc_Δfwhm_solar_rotation.(df_files_use.bjd,obs=:WIYN)
+
+else
+    @warn("This script is intended for analyzing NEID solar observations.")
+    df_files_use = df_files_obs |>
+      @filter( _.target == fits_target_str ) |>
+      #@filter(bjd_first_good <= _.bjd < bjd_last_good) |>
+      #@filter( is_good_day(_.Filename) ) |>
+      #@take(max_spectra_to_use) |>
+      DataFrame
 end
 
 
@@ -137,6 +166,8 @@ if verbose println("# Reading in customized parameters from param.jl.")  end
 
 
 #using NaNMath
+compute_order_snr = false
+if compute_order_snr
 println("# Computing order SNRs")
 df_files_use[!,:order_snrs] = fill(zeros(0),size(df_files_use,1))
    for (i,row) in enumerate(eachrow(df_files_use))
@@ -151,6 +182,7 @@ df_files_use[!,:order_snrs] = fill(zeros(0),size(df_files_use,1))
        order_snr = map(ord->RvSpectMLBase.calc_snr(spec, pixels, ord), all_orders)
        df_files_use[i,:order_snrs] = order_snr
    end
+end
 
 println("# Writing manifest file.")
 CSV.write(manifest_filename, df_files_use)
