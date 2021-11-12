@@ -96,7 +96,7 @@ df_files_use = df_files_obs |>
 =#
 
 if fits_target_str == "Sun" || fits_target_str == "Solar"
-    df_pyrohelio_obs = DataFrame(map(f->Pyroheliometer.get_pyrohelio_summary(df_pyrohelio_files, f), df_files_obs.Filename  ))
+    df_pyrohelio_obs = DataFrame(map(x->Pyroheliometer.get_pyrohelio_summary(df_pyrohelio_files, x[1], x[2]), zip(df_files_obs.Filename, df_files_obs.exptime)  ))
     df_files_obs.filename = basename.(df_files_obs.Filename)
     df_files_use = leftjoin(df_files_obs, df_pyrohelio_obs, on=:filename, makeunique=true)
 

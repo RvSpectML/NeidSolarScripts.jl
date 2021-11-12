@@ -340,7 +340,10 @@ if verbose println("# Reading manifest of files to process.")  end
   println("# Found ", size(df_files_use,1), " files of ",  size(df_files,1), " to process.")
   @assert size(df_files_use,1) >= 1
 
+max_drp_minor_version = Base.thisminor(maximum(VersionNumber.(df_files_use.drpversion)))
+
 df_files_cleanest = df_files_use |>
+    @filter( Base.thisminor(VersionNumber(_.drpversion)) == max_drp_minor_version ) |> 
     @filter( _.airmass <= 2.0 ) |>
     @filter( abs(_.solar_hour_angle) <= 1 ) |>
     #@filter( sum(_.order_snrs) >= 0.9 * max_snr ) |>
@@ -579,6 +582,7 @@ println("# Saving results to ", daily_ccf_filename, ".")
     f["start_processing_time"] = start_processing_time
     f["stop_processing_time"] = stop_processing_time
     f["daily_ccf_filename"] = daily_ccf_filename
+    f["drpversion"] = max_drp_minor_version 
     f["file_hashes"] = file_hashes
   end
 if verbose println(now()) end

@@ -2,6 +2,7 @@ module Pyroheliometer
 using Dates
 using DataFrames, CSV
 using FITSIO
+using Statistics
 
 function make_pyrohelio_file_dataframe(pyro_path::String)
 	pyro_files = readdir(pyro_path)
@@ -18,8 +19,8 @@ begin
 	end
 
 	function pick_pyrohelio_file(pyrohelio_files::DataFrame, t::DateTime)
-		if !issorted(df_pyrohelio_files, :start_date)
-			sort!(df_pyrohelio_files, :start_date)
+		if !issorted(pyrohelio_files, :start_date)
+			sort!(pyrohelio_files, :start_date)
 		end
 		idx = searchsortedlast(pyrohelio_files.start_date, t)
 		if !(1 <= idx <= size(pyrohelio_files,1))
@@ -38,10 +39,11 @@ end
 
 begin
 	function read_pyrohelio_file(fn::String; force::Bool = false)
+                global pyrohelio_cache
 		if !force && haskey(pyrohelio_cache,fn)
 			df_pyrohelio_data = pyrohelio_cache[fn]
 		else
-			df_pyrohelio_data = CSV.read(fn, header=[:time_str,:voltage,:flux],DataFrame)
+			df_pyrohelio_data = CSV.read(fn, header=[:time_str,:voltage,:flux], types=[String,Float64,Float64], DataFrame)
 
 			datefmt = DateFormat("yyyy-mm-ddTHH:MM:SS.sss")
 			df_pyrohelio_data.time = map(tstr->DateTime(view(tstr,1:23),datefmt),collect(df_pyrohelio_data.time_str))
@@ -84,16 +86,18 @@ begin
 		df[idx_start:idx_stop,:]
 	end
 
-	function get_pyrohelio_data(pyrohelio_files::DataFrame, fn::String)
+	function get_pyrohelio_data(pyrohelio_files::DataFrame, fn::String, exptime::Real)
 		m = match(r"neidL2_(\d+T\d+).fits",fn)
 		@assert m != nothing
 		t_start = DateTime(m[1],DateFormat("yyyymmddTHHMMSS"))
-		fits = FITS(fn)
+		#=
+                fits = FITS(fn)
 		@assert length(fits) >= 1
 		hdr = read_header(fits[1])
 		exptime = hdr["EXPTIME"]
-		exptime_sec = round(Int64,exptime)
 		close(fits)
+                =#
+		exptime_sec = round(Int64,exptime)
 		get_pyrohelio_data(pyrohelio_files,t_start, exptime_sec)
 	end
 end
@@ -103,16 +107,18 @@ function get_pyrohelio_mean_Δt(df::DataFrame; time_start::DateTime = first(df.t
 	sum(dt.*df.flux)/sum(df.flux)
 end
 
-function get_pyrohelio_summary(pyrohelio_files::DataFrame, fn::String)
+function get_pyrohelio_summary(pyrohelio_files::DataFrame, fn::String, exptime::Real)
 	m = match(r"neidL2_(\d+T\d+).fits",fn)
 	@assert m != nothing
 	time_start = DateTime(m[1],DateFormat("yyyymmddTHHMMSS"))
-	fits = FITS(fn)
+	#=
+        fits = FITS(fn)
 	@assert length(fits) >= 1
 	hdr = read_header(fits[1])
 	exptime = hdr["EXPTIME"]
-	exptime_sec = round(Int64,exptime)
 	close(fits)
+        =#
+	exptime_sec = round(Int64,exptime)
 
 	try
 		df = get_pyrohelio_data(pyrohelio_files, time_start, exptime_sec)

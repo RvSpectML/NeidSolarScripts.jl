@@ -31,6 +31,7 @@ tmp.jl
 /scripts/submit_make_manifests.sh
 /scripts/manif_*.o*
 /scripts/pbs_*
+/scripts/ccf*.o*
 
 # Documenter
 /docs/build/
