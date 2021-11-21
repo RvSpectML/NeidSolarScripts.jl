@@ -162,6 +162,7 @@ begin
                         meta_old_drp_df = meta_df |> @filter( Base.thisminor(VersionNumber(_.swversion)) < drp_latest_minor ) |> DataFrame
                         if size(meta_old_drp_df,1) >= 1 
 			   append!(need_to_redownload_df,meta_old_drp_df)
+                           suspect_files_dir = joinpath(path,suspect_dirname)
                            isdir(suspect_files_dir) || mkdir(suspect_files_dir)
                            for file in meta_old_drp_df.filename
                                mv(file, joinpath(suspect_files_dir,file), force=true)

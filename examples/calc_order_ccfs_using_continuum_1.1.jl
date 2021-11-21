@@ -288,6 +288,11 @@ if verbose   println("# Loading other packages 2/2")    end
  #args["continuum_normalization_individually"] = false #  TODO Remove after done testing
  #args["recompute_line_weights"] = true  # TODO Remove after done testing
 
+if filesize(manifest_filename) == 0
+   println("# Manifest filesize = 0 implies error generating manifest: ", manifest_filename, ".")
+   exit(0)
+end
+
 if verbose println("# Reading manifest of files to process.")  end
   df_files  = CSV.read(manifest_filename, DataFrame)
     @assert size(df_files,1) >= 1
@@ -324,6 +329,9 @@ if verbose println("# Reading manifest of files to process.")  end
   @assert args["max_airmass"] == nothing || 1 < args["max_airmass"] <= 10  # not tested beyond 10
   @assert args["min_snr_factor"] == nothing || 0 <= args["min_snr_factor"] < 1
   @assert args["max_solar_hour_angle"] == nothing || 0 < args["max_solar_hour_angle"] <= 6
+ 
+ min_drp_minor_version = VersionNumber(1,1,0)
+ max_drp_minor_version = VersionNumber(1,1,0)
 
 
   df_files_use = df_files |>
@@ -333,17 +341,22 @@ if verbose println("# Reading manifest of files to process.")  end
     @filter( args["max_solar_hour_angle"] == nothing || abs(_.solar_hour_angle) <= args["max_solar_hour_angle"] ) |>
     @filter( args["start_time"] == nothing || Time(julian2datetime(_.bjd)) >= start_time ) |>
     @filter( args["stop_time"] == nothing || Time(julian2datetime(_.bjd)) <= stop_time ) |> # TODO for other instruments may need to deal wtih cross end of 24 UTC
+    @filter( _.drpversion != "" && (min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version )) |> 
     # TODO: Replace to use expmeter or pyrheliometer data
     # @filter( args["min_snr_factor"] == nothing || sum(_.order_snrs) >= args["min_snr_factor"] * max_snr ) |>
     @take(args["max_num_spectra"] ) |> @orderby(_.bjd) |>
-    DataFrame
+   DataFrame
   println("# Found ", size(df_files_use,1), " files of ",  size(df_files,1), " to process.")
+  if !(size(df_files_use,1) >= 1)
+    println("# Found no files passing requirements.\n")
+    exit(0)
+  end
   @assert size(df_files_use,1) >= 1
 
-max_drp_minor_version = Base.thisminor(maximum(VersionNumber.(df_files_use.drpversion)))
+#max_drp_minor_version = Base.thisminor(maximum(VersionNumber.(df_files_use.drpversion)))
 
 df_files_cleanest = df_files_use |>
-    @filter( Base.thisminor(VersionNumber(_.drpversion)) == max_drp_minor_version ) |> 
+    @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
     @filter( _.airmass <= 2.0 ) |>
     @filter( abs(_.solar_hour_angle) <= 1 ) |>
     #@filter( sum(_.order_snrs) >= 0.9 * max_snr ) |>

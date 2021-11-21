@@ -353,7 +353,10 @@ end
 
 pipeline_plan = PipelinePlan()
  if verbose println("# Reading data files.")  end
- all_spectra = Spectra2DBasic{Float64, Float32, Float32, Matrix{Float64}, Matrix{Float32}, Matrix{Float32}, NEID2D}[]
+ # For v1.0.0
+ #all_spectra = Spectra2DBasic{Float64, Float32, Float32, Matrix{Float64}, Matrix{Float32}, Matrix{Float32}, NEID2D}[]
+ # For v1.1.*
+ all_spectra = Spectra2DBasic{Float64, Float64, Float32, Matrix{Float64}, Matrix{Float64}, Matrix{Float32}, NEID2D}[]
  spec = NEID.read_data(first(eachrow(df_files_use)).Filename)
  mean_clean_flux = zeros(Float64,size(spec.flux));
  mean_clean_var = zeros(Float64,size(spec.flux));

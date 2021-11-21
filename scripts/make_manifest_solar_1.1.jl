@@ -68,8 +68,23 @@ if can_skip_generating_manifest && !create_missing_continuum_files
     exit()
 end
 
-df_files = NEID.make_manifest(joinpath(neid_data_path, target_subdir))
-df_pyrohelio_files = Pyroheliometer.make_pyrohelio_file_dataframe(pyrohelio_data_path)
+try
+   global df_files = NEID.make_manifest(joinpath(neid_data_path, target_subdir))
+   global df_pyrohelio_files = Pyroheliometer.make_pyrohelio_file_dataframe(pyrohelio_data_path)
+
+catch ex
+   println("# Error making manifest for ", target_subdir," and/or pyroheliometer dataframe.")
+   touch(manifest_filename)
+   touch(manifest_calib_filename)
+   exit(0)
+end
+
+if size(df_files,1) == 0
+   println("# No files in manifest.")
+   touch(manifest_filename)
+   touch(manifest_calib_filename)
+   exit(0)
+end
 
 calibration_target_substrings = ["Etalon","LFC","ThArS","LDLS","FlatBB"]
 df_files_calib = df_files |>
@@ -80,11 +95,20 @@ df_files_calib[!,:airmass] = fill(NaN,size(df_files_calib,1))
 CSV.write(manifest_calib_filename, df_files_calib)
 
 
-df_files_obs = df_files |>
+try
+    global df_files_obs = df_files |>
     @filter( _.target == "Sun" ) |>
+    @filter( !isnothing(_.drpversion) && !ismissing(_.drpversion) && !(_.drpversion == "") ) |>
+    #@filter( Base.thisminor(VersionNumber(_.drpversion)) == Base.thisminor(VersionNumber(1,1,0)) ) |>
     @filter( !any(map(ss->contains(_.target,ss),calibration_target_substrings)) ) |>
     # @take(10) |> 
     DataFrame
+catch ex
+   println("# No files passed target and DRP version criteria.")
+   touch(manifest_filename)
+   exit(0)
+end
+
 
 #=
 df_files_use = df_files_obs |>
@@ -94,6 +118,12 @@ df_files_use = df_files_obs |>
       #@take(max_spectra_to_use) |>
       DataFrame
 =#
+
+if size(df_files_obs,1) == 0
+   touch(manifest_filename)
+   println("# No files avaliable in df_files_obs.")
+   exit(0)
+end
 
 if fits_target_str == "Sun" || fits_target_str == "Solar"
     df_pyrohelio_obs = DataFrame(map(x->Pyroheliometer.get_pyrohelio_summary(df_pyrohelio_files, x[1], x[2]), zip(df_files_obs.Filename, df_files_obs.exptime)  ))
@@ -134,7 +164,11 @@ else
       DataFrame
 end
 
-
+if size(df_files_use,1) == 0
+   println("# No files avaliable.")
+   touch(manifest_filename)
+   exit(0)
+end
 
 if create_missing_continuum_files
    df_files_use.continuum_filename = map(fn->joinpath(output_path,"continuum",match(r"(neidL[1,2]_\d+[T_]\d+)\.fits$", fn)[1] * "_continuum=afs.jld2"),df_files_use.Filename)
