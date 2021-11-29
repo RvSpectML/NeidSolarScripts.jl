@@ -1,5 +1,53 @@
-verbose = true
- if verbose && !isdefined(Main,:RvSpectML)  println("# Loading RvSpecML")    end
+using ArgParse
+
+
+
+
+
+function parse_commandline_make_manifest_solar()
+     s = ArgParseSettings( description = "Make manifest.csv from FITS files in inputdir.")
+     @add_arg_table! s begin
+         "input"
+            help = "Directory (or parent directory) with downloaded FITS files."
+            arg_type = String
+            required = true
+         "output"
+            help = "Path for outputs: manifest.csv"
+            arg_type = String
+            required = true
+#            default = "output"
+         "--subdir"
+            help = "Subdirectory with downloaded FITS files."
+            arg_type = String
+            default = ""
+         "--pyrohelio"
+            help = "Path for pyroheliometer inputs: *.tel"
+            arg_type = String
+            default = "/gpfs/group/ebf11/default/ebf11/neid_solar/data/pyrohelio/202110_fromChad/"
+         "--root"
+            help = "Path to root of data directories"
+            arg_type = String
+            default = ""
+         "--create-continuum"
+            help = "Create missing continuum files"
+            action = :store_true
+         "--verbose"
+            help = "Verbose outputs"
+            action = :store_true
+      end
+
+  return parse_args(s)
+end
+args = parse_commandline_make_manifest_solar()
+if haskey(args,"root")       root_dir            = args["root"]   end
+if haskey(args,"input")      input_dir           = args["input"]   end
+if haskey(args,"output")     output_dir          = args["output"]      end 
+if haskey(args,"subdir")     subdir              = args["subdir"]      end
+if haskey(args,"pyrohelio")  pyrohelio_dir       = args["pyrohelio"]   end 
+create_missing_continuum_files = haskey(args,"create-continuum") ? args["create-continuum"] : false
+verbose = haskey(args,"verbose") ? args["verbose"] : false
+
+if verbose && !isdefined(Main,:RvSpectML)  println("# Loading RvSpecML")    end
  using RvSpectMLBase
  using EchelleInstruments, EchelleInstruments.NEID
  using RvSpectML
@@ -14,22 +62,30 @@ verbose = true
  using CSV, DataFrames, Query, Dates
  #using StatsBase, Statistics, Dates
 
+
 fits_target_str = "Sun"
- if !@isdefined(target_subdir)
-      target_subdir = ""
+#=
+ if !@isdefined(subdir)
+      subdir = ""
  end
  if !@isdefined(create_missing_continuum_files)
      create_missing_continuum_files = false
  end
+=#
  paths_to_search_for_param = [pwd(),pkgdir(NeidSolarScripts)]
 
  if verbose println("# Finding what data files are avaliable.")  end
  eval(read_data_paths(paths_to_search=paths_to_search_for_param))
- @assert isdefined(Main,:neid_data_path)
+ @assert isdefined(Main,:root_dir)
+# @assert isdefined(Main,:neid_data_path)
+ @assert isdefined(Main,:input_dir)
  @assert isdefined(Main,:output_dir)
- output_path = joinpath(neid_data_path, target_subdir,output_dir)
+ @assert isdefined(Main,:subdir)
+ input_path = joinpath(root_dir,input_dir, subdir)
+ output_path = joinpath(root_dir,output_dir, subdir)
  manifest_filename = joinpath(output_path,"manifest.csv")
  manifest_calib_filename = joinpath(output_path,"manifest_calib.csv")
+ pyrohelio_data_path = joinpath(root_dir,pyrohelio_dir)
 
 can_skip_generating_manifest = false
 if isfile(manifest_filename) || islink(manifest_filename)
@@ -69,11 +125,17 @@ if can_skip_generating_manifest && !create_missing_continuum_files
 end
 
 try
-   global df_files = NEID.make_manifest(joinpath(neid_data_path, target_subdir))
    global df_pyrohelio_files = Pyroheliometer.make_pyrohelio_file_dataframe(pyrohelio_data_path)
+catch ex
+   println("# Error making pyroheliometer dataframe for " * pyrohelio_data_path * ".")
+   exit(0)
+end
+
+try
+   global df_files = NEID.make_manifest(input_path) #joinpath(root_path,input_dir, subdir))
 
 catch ex
-   println("# Error making manifest for ", target_subdir," and/or pyroheliometer dataframe.")
+   println("# Error making manifest for ", subdir," and/or pyroheliometer dataframe.")
    touch(manifest_filename)
    touch(manifest_calib_filename)
    exit(0)

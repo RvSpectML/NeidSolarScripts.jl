@@ -1,6 +1,4 @@
-verbose = true
- using Dates
- if verbose println(now()) end
+verbose = false
  if verbose && !isdefined(Main,:RvSpectML)  println("# Loading RvSpecML")    end
  using RvSpectMLBase
  using EchelleInstruments#, EchelleInstruments.NEID
@@ -8,7 +6,6 @@ verbose = true
  if verbose println("# Loading NeidSolarScripts")    end
  using SunAsAStar
  using NeidSolarScripts
- println("# Loading other packages 1/2")
  using ArgParse
 
 println("# Parsing arguments...")
@@ -32,6 +29,9 @@ println("# Parsing arguments...")
              arg_type = String
          "--overwrite"
             help = "Specify it's ok to overwrite the output file."
+            action = :store_true
+         "--verbose"
+            help = "Verbose logging."
             action = :store_true
       end
       add_arg_group!(s, "CCF parameters", :argg_ccf_param)
@@ -181,6 +181,11 @@ println("# Parsing arguments...")
      return parse_args(s)
  end
  args = parse_commandline()
+
+verbose = haskey(args,"verbose") ? args["verbose"] : verbose
+
+if verbose println(now()) end
+ #println("# Loading other packages 1/2")
 
 if verbose   println("# Loading other packages 2/2")    end
  using CSV, DataFrames, Query, Dates

@@ -143,6 +143,14 @@ begin
         end
 
 	function make_meta_redownload(meta_df::DataFrame, manifest_df::DataFrame, path::String; max_files::Integer = 300, checksums::Bool = true, suspect_dirname = "suspect" )
+                if size(manifest_df,1) == 0
+                   return meta_df
+                   @warn("Empty dataframe meta: " * string(size(meta_df,1)) * ", manifest: " * string(size(manifest_df,1)) )
+                end
+                if size(meta_df,1) == 0 || size(manifest_df,1) == 0
+                   @warn("Empty dataframe meta: " * string(size(meta_df,1)) * ", manifest: " * string(size(manifest_df,1)) )
+                   return DataFrame()
+                end 
 		meta_missing_files = meta_df |> @filter( !(_.l2filename ∈ manifest_df.filename) ) |> DataFrame
 		need_to_redownload_df = copy(meta_missing_files)
 		if checksums

@@ -177,23 +177,29 @@ manifest_use = manifest |>
  @take(args["max_num_spectra"] ) |> @orderby(_.bjd) |>
  DataFrame
 println("# Found ", size(manifest_use,1), " files of ",  size(manifest,1), " to use for RVs.")
-@assert size(manifest_use,1) >= 1
+#@assert size(manifest_use,1) >= 1
+if size(manifest_use,1) >= 1
+   df_out = select(manifest_use,[:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp ], :Δv_diff_ext, :Δfwhm², :solar_hour_angle, :airmass, :sol_dist, :expmeter_mean, :expmeter_rms, [:mean_pyroflux=>:pyroflux_mean, :rms_pyroflux=>:pyroflux_rms], :exptime, :mean_Δt, :Filename)
 
-df_out = select(manifest_use,[:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp ], :Δv_diff_ext, :Δfwhm², :solar_hour_angle, :airmass, :sol_dist, :expmeter_mean, :expmeter_rms, [:mean_pyroflux=>:pyroflux_mean, :rms_pyroflux=>:pyroflux_rms], :exptime, :mean_Δt, :Filename)
-
-daily_mean_bjd = mean(df_out.jd_drp)
-daily_mean_rv = mean(df_out.rv_drp)
-daily_median_rv = median(df_out.rv_drp)
-daily_median_σ_rv = median(df_out.σrv_drp)
-daily_rms_rvs = sqrt(var(df_out.rv_drp,corrected=false))
+   daily_mean_bjd = mean(df_out.jd_drp)
+   daily_mean_rv = mean(df_out.rv_drp)
+   daily_median_rv = median(df_out.rv_drp)
+   daily_median_σ_rv = median(df_out.σrv_drp)
+   daily_rms_rvs = sqrt(var(df_out.rv_drp,corrected=false))
+end
 
 println("# Writing outputs")
-CSV.write(daily_rvs_filename,df_out)
+if size(manifest_use,1) >= 1
+   CSV.write(daily_rvs_filename,df_out)
+else
+   touch(daily_rvs_filename)
+end
 
 input_md5 = bytes2hex(open(md5,daily_ccf_filename))
 
-report_str = """
-# NEID Solar Observations Daily Report
+if size(manifest_use,1) >= 1
+   report_str = """
+# NEID Solar Observations Daily Report $(args["datestr"])
 - Usable files: $(size(manifest_use,1)) of $(size(manifest,1)) solar observations
 - Daily mean JD: $daily_mean_bjd   $(julian2datetime(daily_mean_bjd))
 - Daily mean RV: $daily_mean_rv
@@ -206,5 +212,16 @@ This report generated on $(gethostname()) at $(now()) based on CCFs calculated a
 Input file: $(input_data["daily_ccf_filename"])
 Input md5sum: $input_md5
 """
+else
+   report_str = """
+# NEID Solar Observations Daily Report $(args["datestr"])
+- Usable files: $(size(manifest_use,1)) of $(size(manifest,1)) solar observations
+
+---
+This report generated on $(gethostname()) at $(now()) based on CCFs calculated at $(input_data["start_processing_time"]).
+Input file: $(input_data["daily_ccf_filename"])
+Input md5sum: $input_md5
+"""
+end
 
 write(daily_report_filename, report_str)

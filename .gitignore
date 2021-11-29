@@ -33,6 +33,9 @@ tmp.jl
 /scripts/pbs_*
 /scripts/ccf*.o*
 
+# NExScI Archive
+neidadmincookie.txt
+
 # Documenter
 /docs/build/
 /docs/site/
