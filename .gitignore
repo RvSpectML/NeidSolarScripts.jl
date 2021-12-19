@@ -35,6 +35,8 @@ tmp.jl
 
 # NExScI Archive
 neidadmincookie.txt
+nexsci_id.toml
+password.jl
 
 # Documenter
 /docs/build/

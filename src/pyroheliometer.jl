@@ -4,14 +4,14 @@ using DataFrames, CSV
 using FITSIO
 using Statistics
 
-function make_pyrohelio_file_dataframe(pyro_path::String)
+function make_pyrohelio_file_dataframe(pyro_path::AbstractString)
 	pyro_files = readdir(pyro_path)
 	filter!(f->match(r"neid_ljpyrohelio_chv0_(\d+).tel",f)!=nothing , pyro_files )
 	df_pyrohelio_files = DataFrame(:filename=>joinpath.(pyro_path,pyro_files), :start_date=>map(f->Date(match(r"neid_ljpyrohelio_chv0_(\d+).tel$",f)[1],DateFormat("yyyymmdd")),pyro_files))
 end
 
 begin
-	function pick_pyrohelio_file(pyrohelio_files::DataFrame, fn::String)
+	function pick_pyrohelio_file(pyrohelio_files::DataFrame, fn::AbstractString)
 		m = match(r"neidL2_(\d+T\d+).fits",fn)
 		@assert m != nothing
 		t_start = DateTime(m[1],DateFormat("yyyymmddTHHMMSS"))
@@ -38,15 +38,15 @@ function clear_pyrohelio_cache!()
 end
 
 begin
-	function read_pyrohelio_file(fn::String; force::Bool = false)
+	function read_pyrohelio_file(fn::AbstractString; force::Bool = false)
                 global pyrohelio_cache
 		if !force && haskey(pyrohelio_cache,fn)
 			df_pyrohelio_data = pyrohelio_cache[fn]
 		else
-			df_pyrohelio_data = CSV.read(fn, header=[:time_str,:voltage,:flux], types=[String,Float64,Float64], DataFrame)
+			df_pyrohelio_data = CSV.read(fn, header=[:time_str,:Voltage,:FluxDensity], types=[String,Float64,Float64], DataFrame)
 
 			datefmt = DateFormat("yyyy-mm-ddTHH:MM:SS.sss")
-			df_pyrohelio_data.time = map(tstr->DateTime(view(tstr,1:23),datefmt),collect(df_pyrohelio_data.time_str))
+			df_pyrohelio_data.Time = map(tstr->DateTime(view(tstr,1:23),datefmt),collect(df_pyrohelio_data.time_str))
 			#delete!(pyrohelio_data_from_prev_file,[:time_str])
 			pyrohelio_cache[fn] = df_pyrohelio_data
 		end
@@ -58,8 +58,8 @@ begin
 		#read_pyrohelio_file(joinpath(pyro_path,fn))
 		read_pyrohelio_file(fn)
 	end
-	function read_pyrohelio_file(pyrohelio_files::DataFrame, fn::String)
-		m = match(r"neidL2_(\d+T\d+).fits",fn)
+	function read_pyrohelio_file(pyrohelio_files::DataFrame, fn::AbstractString)
+		m = match(r"neidL\d_(\d+T\d+).fits",fn)
 		@assert m != nothing
 		t_start = DateTime(m[1],DateFormat("yyyymmddTHHMMSS"))
 		fn = pick_pyrohelio_file(pyrohelio_files, t_start)
@@ -73,11 +73,11 @@ begin
 		t_stop = t_start + Dates.Second(exptime)
 
 		df = read_pyrohelio_file(pyrohelio_files,t_start)
-		idx_start = searchsortedfirst(df.time,t_start)
+		idx_start = searchsortedfirst(df.Time,t_start)
 		if !(1 <= idx_start <= size(df,1))
 			throw("get_pyrohelio_data: idx_start = " * string(idx_start))
 		end
-		idx_stop = searchsortedlast(df.time,t_stop)
+		idx_stop = searchsortedlast(df.Time,t_stop)
 		if !(1 <= idx_stop <= size(df,1))
 			throw("get_pyrohelio_data: idx_stop = " * string(idx_stop))
 		end
@@ -86,8 +86,8 @@ begin
 		df[idx_start:idx_stop,:]
 	end
 
-	function get_pyrohelio_data(pyrohelio_files::DataFrame, fn::String, exptime::Real)
-		m = match(r"neidL2_(\d+T\d+).fits",fn)
+	function get_pyrohelio_data(pyrohelio_files::DataFrame, fn::AbstractString, exptime::Real)
+		m = match(r"neidL\d_(\d+T\d+).fits",fn)
 		@assert m != nothing
 		t_start = DateTime(m[1],DateFormat("yyyymmddTHHMMSS"))
 		#=
@@ -100,36 +100,72 @@ begin
 		exptime_sec = round(Int64,exptime)
 		get_pyrohelio_data(pyrohelio_files,t_start, exptime_sec)
 	end
+
 end
 
-function get_pyrohelio_mean_Δt(df::DataFrame; time_start::DateTime = first(df.time))
-	dt = map(dt->dt.value/1000,df.time .-time_start)
-	sum(dt.*df.flux)/sum(df.flux)
+function get_pyrohelio_mean_Δt(df::DataFrame; time_start::DateTime = first(df.Time) )
+	@assert hasproperty(df,:Time)
+	@assert hasproperty(df,:FluxDensity)
+	dt = map(dt->dt.value/1000,df.Time .-time_start)
+	sum(dt.*df.FluxDensity)/sum(df.FluxDensity)
 end
 
-function get_pyrohelio_summary(pyrohelio_files::DataFrame, fn::String, exptime::Real)
-	m = match(r"neidL2_(\d+T\d+).fits",fn)
-	@assert m != nothing
-	time_start = DateTime(m[1],DateFormat("yyyymmddTHHMMSS"))
-	#=
-        fits = FITS(fn)
-	@assert length(fits) >= 1
-	hdr = read_header(fits[1])
-	exptime = hdr["EXPTIME"]
-	close(fits)
-        =#
-	exptime_sec = round(Int64,exptime)
-
-	try
-		df = get_pyrohelio_data(pyrohelio_files, time_start, exptime_sec)
-		#time_start = first(df.time)  # Comment out so use FITS file start as reference time
-		mean_Δt = get_pyrohelio_mean_Δt(df, time_start=time_start)
-		mean_flux = mean(df.flux)
-		rms_flux = sqrt(var(df.flux,mean=mean_flux,corrected=false))
-		(;filename=basename(fn), time_start, exptime, mean_Δt, mean_pyroflux=mean_flux, rms_pyroflux=rms_flux)
-	catch exepction
-		(;filename=basename(fn), time_start, exptime, mean_Δt=missing, mean_pyroflux=missing, rms_pyroflux=missing)
+begin
+	function get_pyrohelio_summary(pyrohelio_files::DataFrame, fn::AbstractString, exptime::Real)
+		m = match(r"neidL\d_(\d+T\d+).fits",fn)
+		@assert m != nothing
+		time_start = DateTime(m[1],DateFormat("yyyymmddTHHMMSS"))
+		#=
+        	fits = FITS(fn)
+			@assert length(fits) >= 1
+			hdr = read_header(fits[1])
+			exptime = hdr["EXPTIME"]
+			close(fits)
+        	=#
+		exptime_sec = round(Int64,exptime)
+		#println(fn,": exptime = ", exptime_sec)
+		try
+			df = get_pyrohelio_data(pyrohelio_files, time_start, exptime_sec)
+			#println(fn, ": pyrheliometer_flux = ", size(df.FluxDensity,1))
+			#time_start = first(df.time)  # Comment out so use FITS file start as reference time
+			mean_Δt = get_pyrohelio_mean_Δt(df, time_start=time_start)
+			mean_flux = mean(df.FluxDensity)
+			rms_flux = sqrt(var(df.FluxDensity,mean=mean_flux,corrected=false))
+			(min_flux, max_flux) = extrema(df.FluxDensity)
+			(;filename=basename(fn), time_start, exptime, mean_Δt, mean_pyroflux=mean_flux, rms_pyroflux=rms_flux, min_pyroflux=min_flux, max_pyroflux=max_flux)
+		catch exepction
+			(;filename=basename(fn), time_start, exptime, mean_Δt=missing, mean_pyroflux=missing, rms_pyroflux=missing,  min_pyroflux=missing, max_pyroflux=missing)
+		end
 	end
+
+	function get_pyrohelio_summary(fn::String) #, exptime::Real)
+		m = match(r"neidL\d_(\d+T\d+)\.fits",fn)
+		@assert m != nothing
+		t_start = DateTime(m[1],DateFormat("yyyymmddTHHMMSS"))
+		try
+			f = FITS(fn)
+			@assert length(f) >= 1
+			hdr = read_header(f[1])
+			exptime = hdr["EXPTIME"]
+			#println(fn,": exptime = ", exptime)
+
+			t = read(f["SOLAR"],"Time")
+        	v = read(f["SOLAR"],"Voltage")
+        	fd = read(f["SOLAR"],"FluxDensity")
+        	df_tmp = DataFrame(:Time=> DateTime.(t), :Voltage=>v, :FluxDensity=>fd)
+			#println(fn, ": pyrheliometer_flux = ", size(df_tmp.FluxDensity,1))
+			#df_tmp.Time = DateTime.(df_tmp.Time)
+        	mean_Δt = get_pyrohelio_mean_Δt(df_tmp)
+			mean_pyroflux = mean(df_tmp.FluxDensity)
+        	rms_pyroflux = sqrt(var(df_tmp.FluxDensity, corrected=false))
+        	(min_pyroflux,max_pyroflux) = extrema(df_tmp.FluxDensity)
+			close(f)
+			return (;filename=basename(fn), time_start=t_start, exptime, mean_Δt, mean_pyroflux, rms_pyroflux, min_pyroflux, max_pyroflux)
+		catch exepction
+			return (;filename=basename(fn), time_start=t_start, exptime=missing, mean_Δt=missing, mean_pyroflux=missing, rms_pyroflux=missing,  min_pyroflux=missing, max_pyroflux=missing)
+		end
+	end
+
 end
 
 export make_pyrohelio_file_dataframe, pick_pyrohelio_file, read_pyrohelio_file
