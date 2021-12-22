@@ -151,7 +151,7 @@ try
    global df_files = NEID.make_manifest(input_path) #joinpath(root_path,input_dir, subdir))
 
 catch ex
-   println("# Error making manifest for ", subdir," and/or pyroheliometer dataframe.")
+   println("# Error making manifest for ", subdir,".")
    touch(manifest_filename)
    touch(manifest_calib_filename)
    exit(0)
