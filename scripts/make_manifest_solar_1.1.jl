@@ -20,10 +20,15 @@ function parse_commandline_make_manifest_solar()
             help = "Subdirectory with downloaded FITS files."
             arg_type = String
             default = ""
+#=
          "--pyrohelio"
             help = "Path for pyroheliometer inputs: *.tel"
             arg_type = String
             default = "/gpfs/group/ebf11/default/ebf11/neid_solar/data/pyrohelio/202110_fromChad/"
+=#
+         "--pyrheliometer"
+            help = "Path with pyrheliometer summary statistics: pyrheliometer.csv"
+            arg_type = String
          "--root"
             help = "Path to root of data directories"
             arg_type = String
@@ -43,7 +48,8 @@ if haskey(args,"root")       root_dir            = args["root"]   end
 if haskey(args,"input")      input_dir           = args["input"]   end
 if haskey(args,"output")     output_dir          = args["output"]      end 
 if haskey(args,"subdir")     subdir              = args["subdir"]      end
-if haskey(args,"pyrohelio")  pyrohelio_dir       = args["pyrohelio"]   end 
+#if haskey(args,"pyrohelio")  pyrohelio_dir       = args["pyrohelio"]   end 
+if haskey(args,"pyrheliometer")  pyrheliometer_dir       = args["pyrheliometer"]   end 
 create_missing_continuum_files = haskey(args,"create-continuum") ? args["create-continuum"] : false
 verbose = haskey(args,"verbose") ? args["verbose"] : false
 
@@ -85,7 +91,9 @@ fits_target_str = "Sun"
  output_path = joinpath(root_dir,output_dir, subdir)
  manifest_filename = joinpath(output_path,"manifest.csv")
  manifest_calib_filename = joinpath(output_path,"manifest_calib.csv")
- pyrohelio_data_path = joinpath(root_dir,pyrohelio_dir)
+ #pyrohelio_data_path = joinpath(root_dir,pyrohelio_dir)
+ #pyrheliometer_fn = joinpath(root_dir,pyrheliometer_dir)
+ pyrheliometer_fn = joinpath(root_dir,pyrheliometer_dir,subdir,"pyrheliometer.csv")
 
 can_skip_generating_manifest = false
 if isfile(manifest_filename) || islink(manifest_filename)
@@ -111,8 +119,12 @@ if isfile(manifest_filename) || islink(manifest_filename)
     println("# Required fields present ", size(df_files), ".  No need to regenerate manifest.")
     can_skip_generating_manifest = true
     if any(isnan.(df_files[!,:Δfwhm²]))    ||
-       any(isnan.(df_files[!,:Δv_diff_ext]))   
+       any(isnan.(df_files[!,:Δv_diff_ext]))
        # any(isnan.(df_files[!,:order_snrs])) 
+          can_skip_generating_manifest = false
+    end
+    if !hasproperty(df_files,:mean_pyroflux) || 
+       any(ismissing.(df_files[!,:mean_pyroflux]))
           can_skip_generating_manifest = false
     end
 else
@@ -124,12 +136,16 @@ if can_skip_generating_manifest && !create_missing_continuum_files
     exit()
 end
 
+#=
 try
    global df_pyrohelio_files = Pyroheliometer.make_pyrohelio_file_dataframe(pyrohelio_data_path)
+   #global df_pyrohelio_files = CSV.read(pyrheliometer_fn,DataFrame)
 catch ex
    println("# Error making pyroheliometer dataframe for " * pyrohelio_data_path * ".")
+   #println("# Error reading pyrheliometer summary file " * pyrheliometer_fn * ".")
    exit(0)
 end
+=#
 
 try
    global df_files = NEID.make_manifest(input_path) #joinpath(root_path,input_dir, subdir))
@@ -188,7 +204,10 @@ if size(df_files_obs,1) == 0
 end
 
 if fits_target_str == "Sun" || fits_target_str == "Solar"
-    df_pyrohelio_obs = DataFrame(map(x->Pyroheliometer.get_pyrohelio_summary(df_pyrohelio_files, x[1], x[2]), zip(df_files_obs.Filename, df_files_obs.exptime)  ))
+    #df_pyrohelio_obs = DataFrame(map(x->Pyroheliometer.get_pyrohelio_summary(df_pyrohelio_files, x[1], x[2]), zip(df_files_obs.Filename, df_files_obs.exptime)  ))
+    df_pyrohelio_obs = CSV.read(pyrheliometer_fn,DataFrame)
+    df_pyrohelio_obs.filename = replace.(df_pyrohelio_obs.filename,"neidL0_"=>"neidL2_")
+    @assert size(df_pyrohelio_obs,1) >= 1
     df_files_obs.filename = basename.(df_files_obs.Filename)
     df_files_use = leftjoin(df_files_obs, df_pyrohelio_obs, on=:filename, makeunique=true)
 

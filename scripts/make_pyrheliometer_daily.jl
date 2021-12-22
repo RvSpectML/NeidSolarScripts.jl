@@ -55,6 +55,8 @@ end
 args = parse_commandline_make_pyrheliometer_daily()
 root_dir = args["root"]
 output_fn = joinpath(root_dir,args["output"]) # if haskey(args,"output")     output_fn          = args["output"]      end
+mkpath(dirname(output_fn))
+tmp_path  = !isnothing(args["work_dir"]) ? joinpath(root_dir,args["work_dir"]) : Filesystem.mktempdir()
 pyrohelio_dir = !isnothing(args["pyrheliometer_dir"]) ? joinpath(root_dir,args["pyrheliometer_dir"]) : nothing
 nexsci_login_fn = !isnothing(args["nexsci_login_filename"]) ? joinpath(root_dir,args["nexsci_login_filename"]) : nothing
 verbose   = args["verbose"]
@@ -68,7 +70,8 @@ if !occursin(r"\.csv$", args["manifest_or_date"])
    if isnothing(m)
       @error "Invalid arguement.  Must be a .csv file or date."
    end
-   @assert length(m) == 3
+   #println("m = ", m)
+   @assert length(m.captures) == 3
    year  = parse(Int64,m[1])
    month = parse(Int64,m[2])
    day   = parse(Int64,m[3])
@@ -106,7 +109,7 @@ if size(df_in,1) == 0
    end
    cookie_fn = args["cookie"]
    @assert !isnothing(user_nexsci) && !isnothing(password_nexsci) && !isnothing(cookie_fn)
-   tmp_path  = !isnothing(args["work_dir"]) ? args["work_dir"] : Filesystem.mktempdir()
+   if !isdir(tmp_path)  mkpath(tmp_path) end
    query_fn  =  !isnothing(args["query_filename"]) ? joinpath(tmp_path,args["query_filename"]) : nothing
 
    NeidArchive.login(userid=user_nexsci, password=password_nexsci, cookiepath=cookie_fn)
@@ -133,10 +136,13 @@ if !isnothing(pyrohelio_dir) && isdir(pyrohelio_dir)
 end
 
 if isnothing(pyrohelio_dir) || !isdir(pyrohelio_dir) || any(ismissing.(df_out.mean_pyroflux))
+   if !isdir(tmp_path)  mkpath(tmp_path) end
    pyrohelio_files = DataFrame()
-
-   NeidArchive.download(query_fn, param["datalevel"], outdir=tmp_path, cookiepath=cookie_fn, start_row=0, end_row=4)
-   df_out = DataFrame(map(fn->Pyroheliometer.get_pyrohelio_summary(string(fn)),df_in.Filename))
+   #println("# start_row = ", 1, " end_row = ", num_lines-1)
+   #NeidArchive.download(query_fn, param["datalevel"], outdir=tmp_path, cookiepath=cookie_fn, start_row=1, end_row=10)
+   #NeidArchive.download(query_fn, "l0", outdir=tmp_path, cookiepath=cookie_fn, start_row=1, end_row=10)
+   #NeidArchive.download(query_fn, "l0", outdir=tmp_path, cookiepath=cookie_fn)
+   df_out = DataFrame(map(fn->Pyroheliometer.get_pyrohelio_summary(joinpath(tmp_path,replace(string(fn),"neidL2_"=>"neidL0_"))),df_in.Filename))
 end
 
 CSV.write(output_fn, df_out)
@@ -516,7 +522,7 @@ if create_missing_continuum_files
      #=
      if !isdir(tmpdir)
         println("# Making ", tmpdir)
-        mkdir(tmpdir)
+        mkpath(tmpdir)
      end
      =#
      #continue
