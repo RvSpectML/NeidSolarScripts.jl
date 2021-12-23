@@ -147,6 +147,9 @@ begin
 			@assert length(f) >= 1
 			hdr = read_header(f[1])
 			exptime = hdr["EXPTIME"]
+			hdr_pyrhelio = read_header(f["SOLAR"])
+			stel = hdr_pyrhelio["STEL"]
+			staz = hdr_pyrhelio["STAZ"]
 			#println(fn,": exptime = ", exptime)
 
 			t = read(f["SOLAR"],"Time")
@@ -160,9 +163,9 @@ begin
         	rms_pyroflux = sqrt(var(df_tmp.FluxDensity, corrected=false))
         	(min_pyroflux,max_pyroflux) = extrema(df_tmp.FluxDensity)
 			close(f)
-			return (;filename=basename(fn), time_start=t_start, exptime, mean_Δt, mean_pyroflux, rms_pyroflux, min_pyroflux, max_pyroflux)
+			return (;filename=basename(fn), time_start=t_start, exptime, mean_Δt, mean_pyroflux, rms_pyroflux, min_pyroflux, max_pyroflux, stel, staz)
 		catch exepction
-			return (;filename=basename(fn), time_start=t_start, exptime=missing, mean_Δt=missing, mean_pyroflux=missing, rms_pyroflux=missing,  min_pyroflux=missing, max_pyroflux=missing)
+			return (;filename=basename(fn), time_start=t_start, exptime=missing, mean_Δt=missing, mean_pyroflux=missing, rms_pyroflux=missing,  min_pyroflux=missing, max_pyroflux=missing, stel=missing, staz=missing)
 		end
 	end
 
