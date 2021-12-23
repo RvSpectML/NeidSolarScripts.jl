@@ -45,6 +45,9 @@ function parse_commandline_make_pyrheliometer_daily()
             help = "Path to root of data directories"
             arg_type = String
             default = ""
+         "--try_tel_first"
+            help = "Try pyrheliometer telemetry file before L0s"
+            action = :store_true
          "--verbose"
             help = "Verbose outputs"
             action = :store_true
@@ -128,16 +131,18 @@ if size(df_in,1) == 0
    df_in = df_in |> @rename(:l0filename => :Filename) |> DataFrame
 end
 
-if !isnothing(pyrohelio_dir) && isdir(pyrohelio_dir)
+if args["try_tel_first"] && (!isnothing(pyrohelio_dir) && isdir(pyrohelio_dir))
    pyrohelio_files = Pyroheliometer.make_pyrohelio_file_dataframe(pyrohelio_dir)
    @assert hasproperty(df_in,"Filename")
    @assert hasproperty(df_in,"exptime")
    df_out = DataFrame(map(r->Pyroheliometer.get_pyrohelio_summary(pyrohelio_files, string(r.Filename), r.exptime), eachrow(df_in)))
+else
+   pyrohelio_files = DataFrame()
+   df_out = DataFrame()
 end
 
-if isnothing(pyrohelio_dir) || !isdir(pyrohelio_dir) || any(ismissing.(df_out.mean_pyroflux))
+if (size(df_out,1) == 0) || any(ismissing.(df_out.mean_pyroflux))
    if !isdir(tmp_path)  mkpath(tmp_path) end
-   pyrohelio_files = DataFrame()
    #println("# start_row = ", 1, " end_row = ", num_lines-1)
    #NeidArchive.download(query_fn, param["datalevel"], outdir=tmp_path, cookiepath=cookie_fn, start_row=1, end_row=10)
    #NeidArchive.download(query_fn, "l0", outdir=tmp_path, cookiepath=cookie_fn, start_row=1, end_row=10)
@@ -145,9 +150,17 @@ if isnothing(pyrohelio_dir) || !isdir(pyrohelio_dir) || any(ismissing.(df_out.me
    df_out = DataFrame(map(fn->Pyroheliometer.get_pyrohelio_summary(joinpath(tmp_path,replace(string(fn),"neidL2_"=>"neidL0_"))),df_in.Filename))
 end
 
+if (size(df_out,1) == 0) && !args["try_tel_first"] && (!isnothing(pyrohelio_dir) && isdir(pyrohelio_dir))
+   pyrohelio_files = Pyroheliometer.make_pyrohelio_file_dataframe(pyrohelio_dir)
+   @assert hasproperty(df_in,"Filename")
+   @assert hasproperty(df_in,"exptime")
+   df_out = DataFrame(map(r->Pyroheliometer.get_pyrohelio_summary(pyrohelio_files, string(r.Filename), r.exptime), eachrow(df_in)))
+end
+
+
 CSV.write(output_fn, df_out)
 df_to_rm = df_in |> @filter( occursin(r"neidL0_\d{8}T\d+\.fits",_.Filename) ) |> @select(:Filename) |> @filter(isfile(_.Filename)) |> DataFrame
-map(fn->println("rm $fn"),df_to_rm.Filename)
+#map(fn->println("rm $fn"),df_to_rm.Filename)
 exit(0)
 
 #=
