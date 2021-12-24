@@ -10,7 +10,7 @@ verbose = true
  using NeidSolarScripts
  println("# Loading other packages 1/2")
  using ArgParse
- using Markdown
+ #using Markdown
 
 println("# Parsing arguments...")
    #lsf_width = 3.0e3
@@ -67,11 +67,11 @@ println("# Parsing arguments...")
         "--max_solar_hour_angle"
            help = "Maximum absolute value of solar hour angle."
            arg_type = Float64
-           default = 6.0
+           default = 3.12
          "--max_airmass"
             help = "Maximum airmass."
             arg_type = Float64
-            default = 10.0
+            default = 2.0
          "--min_expmeter_factor"
             help = "Minimum exposure meter flux relative to model flux."
             arg_type = Float64
@@ -84,18 +84,18 @@ println("# Parsing arguments...")
             help = "Maximum fractional RMS of exposure meter flux."
             arg_type = Float64
             default = 0.01
-         "--min_pyrohelio_factor"
-            help = "Minimum pyroheliometer flux relative to model flux."
+         "--min_pyrhelio_factor"
+            help = "Minimum pyrheliometer flux relative to model flux."
             arg_type = Float64
             default = 0.9
-         "--max_pyrohelio_factor"
-            help = "Maximum pyroheliometer flux relative to model flux."
+         "--max_pyrhelio_factor"
+            help = "Maximum pyrheliometer flux relative to model flux."
             arg_type = Float64
             default = 1.1
-         "--max_pyrohelio_frac_rms"
-            help = "Maximum fractional RMS of pyroheliometer meter flux."
+         "--max_pyrhelio_frac_rms"
+            help = "Maximum fractional RMS of pyrheliometer meter flux."
             arg_type = Float64
-            default = 0.01
+            default = 0.0035
          #=
          "--min_drp_snr"
             help = "Minimum extracted SNR reported by NEID DRP."
@@ -179,7 +179,7 @@ manifest_use = manifest |>
 println("# Found ", size(manifest_use,1), " files of ",  size(manifest,1), " to use for RVs.")
 #@assert size(manifest_use,1) >= 1
 if size(manifest_use,1) >= 1
-   df_out = select(manifest_use,[:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp ], :Δv_diff_ext, :Δfwhm², :solar_hour_angle, :airmass, :sol_dist, :expmeter_mean, :expmeter_rms, [:mean_pyroflux=>:pyroflux_mean, :rms_pyroflux=>:pyroflux_rms], :exptime, :mean_Δt, :Filename)
+   df_out = select(manifest_use,[:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp ], :Δv_diff_ext, :Δfwhm², :solar_hour_angle, :airmass, :sol_dist, :expmeter_mean, :expmeter_rms, [:mean_pyrflux=>:pyroflux_mean, :rms_pyrflux=>:pyroflux_rms], :exptime, :mean_Δt, :Filename)
 
    daily_mean_bjd = mean(df_out.jd_drp)
    daily_mean_rv = mean(df_out.rv_drp)
