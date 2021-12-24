@@ -147,18 +147,30 @@ println("# Parsing arguments...")
         "--max_solar_hour_angle"
            help = "Maximum absolute value of solar hour angle."
            arg_type = Float64
-           default = 6.0
+           default = 3.12
+        "--max_solar_hour_angle_clean"
+           help = "Maximum absolute value of solar hour angle for clean spectrum."
+           arg_type = Float64
+           default = 2.0
          "--max_airmass"
             help = "Maximum airmass."
             arg_type = Float64
-            #default = 10.0
+         "--max_airmass_clean"
+            help = "Maximum airmass for clean spectrum."
+            arg_type = Float64
+            default = 2.0
+#=
          "--min_snr_factor"
             help = "Minimum SNR relative to max_snr."
             arg_type = Float64
-            #default = 0.0
+         "--min_snr_factor_clean"
+            help = "Minimum SNR relative to max_snr for clean spectrum."
+            arg_type = Float64
+            default = 0.5
          "--max_snr"
             help = "Specify max_snr manually."
             arg_type = Float64
+=#
          "--start_time"
             help = "Specify daily start time for CCFs to be processed (HH MM)"
             nargs = 2
@@ -175,7 +187,11 @@ println("# Parsing arguments...")
          "--max_num_spectra"
             help = "Maximum number of spectra to process."
             arg_type = Int
-            default = 250   # TODO: Increase  after finish testing
+            default = 300  # Enough for one day of NEID
+         "--max_num_spectra_clean"
+            help = "Maximum number of spectra to include in clean spectrum."
+            arg_type = Int
+            default = 65  # based on 60 minutes of integration time from 55s exposures
       end
 
      return parse_args(s)
@@ -310,7 +326,9 @@ if verbose println("# Reading manifest of files to process.")  end
     if args["target"] == "Sun" || args["target"] == "Solar"
       @assert hasproperty(df_files,:alt_sun)  # TODO: Compute if not avaliable?
       @assert hasproperty(df_files,:Δfwhm²)   # TODO: Compute if not avaliable?
-      df_files[!,"solar_hour_angle"] = SolarRotation.get_solar_hour_angle(df_files.bjd,obs=:WIYN)
+      if !hasproperty(df_files,:solar_hour_angle)
+         df_files[!,"solar_hour_angle"] = SolarRotation.get_solar_hour_angle(df_files.bjd,obs=:WIYN)
+      end
       #if eltype(df_files[!,:order_snrs]) == String   # TODO: Compute if not avaliable?
     end
     #=
@@ -332,7 +350,7 @@ if verbose println("# Reading manifest of files to process.")  end
   =#
 
   @assert args["max_airmass"] == nothing || 1 < args["max_airmass"] <= 10  # not tested beyond 10
-  @assert args["min_snr_factor"] == nothing || 0 <= args["min_snr_factor"] < 1
+  #@assert args["min_snr_factor"] == nothing || 0 <= args["min_snr_factor"] < 1
   @assert args["max_solar_hour_angle"] == nothing || 0 < args["max_solar_hour_angle"] <= 6
  
  min_drp_minor_version = VersionNumber(1,1,0)
@@ -341,15 +359,42 @@ if verbose println("# Reading manifest of files to process.")  end
 
   df_files_use = df_files |>
     @filter( args["target"] == nothing || _.target == args["target"] ) |>
+    DataFrame
+  df_files_use = df_files_use |>   
     @filter( args["datestr"] == nothing || occursin(args["datestr"],_.target) ) |>
+    DataFrame
+  df_files_use = df_files_use |>   
     @filter( args["max_airmass"] == nothing || _.airmass <= args["max_airmass"] ) |>
+    DataFrame
+  df_files_use = df_files_use |>   
     @filter( args["max_solar_hour_angle"] == nothing || abs(_.solar_hour_angle) <= args["max_solar_hour_angle"] ) |>
+    DataFrame
+  df_files_use = df_files_use |>   
     @filter( args["start_time"] == nothing || Time(julian2datetime(_.bjd)) >= start_time ) |>
+    DataFrame
+  df_files_use = df_files_use |>   
     @filter( args["stop_time"] == nothing || Time(julian2datetime(_.bjd)) <= stop_time ) |> # TODO for other instruments may need to deal wtih cross end of 24 UTC
+    DataFrame
+  df_files_use = df_files_use |>   
     @filter( _.drpversion != "" && (min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version )) |> 
-    # TODO: Replace to use expmeter or pyrheliometer data
+    DataFrame
     # @filter( args["min_snr_factor"] == nothing || sum(_.order_snrs) >= args["min_snr_factor"] * max_snr ) |>
-    @take(args["max_num_spectra"] ) |> @orderby(_.bjd) |>
+    # TODO: Replace to use expmeter or pyrheliometer data
+  if !hasproperty(df_files_use,:mean_pyroflux) || !hasproperty(df_files_use,:rms_pyroflux) || any(ismissing.(df_files_use.mean_pyroflux)) || any(ismissing.(df_files_use.rms_pyroflux))
+     @error "Manifest file doesn't include valid mean_pyroflux and/or rms_pyroflux." manifest_filename 
+  end
+  df_files_use = df_files_use |>   
+    @filter( _.rms_pyroflux <= 0.0035* _.mean_pyroflux ) |> 
+    DataFrame
+  df_files_use = df_files_use |>   
+    @filter( _.expmeter_mean >= 6e4 ) |> 
+    DataFrame
+  df_files_use = df_files_use |>   
+    @filter( _.driftfun == "dailymodel0" ) |>
+    DataFrame
+  df_files_use = df_files_use |>   
+    @orderby(_.bjd) |>
+    @take(args["max_num_spectra"] ) |>
    DataFrame
   println("# Found ", size(df_files_use,1), " files of ",  size(df_files,1), " to process.")
   if !(size(df_files_use,1) >= 1)
@@ -362,10 +407,11 @@ if verbose println("# Reading manifest of files to process.")  end
 
 df_files_cleanest = df_files_use |>
     @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
-    @filter( _.airmass <= 2.0 ) |>
-    @filter( abs(_.solar_hour_angle) <= 1 ) |>
-    #@filter( sum(_.order_snrs) >= 0.9 * max_snr ) |>
-    @take(args["max_num_spectra"] ) |>
+    #@filter( _.airmass <= 2.0 ) |>
+    @filter( _.airmass <= args["max_airmass_clean"] ) |>
+    @filter( abs(_.solar_hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
+    @orderby( abs(_.solar_hour_angle) ) |> 
+    @take(args["max_num_spectra_clean"] ) |>
     DataFrame
   println("# Found ", size(df_files_cleanest,1), " files considered clean.")
   #@assert size(df_files_cleanest,1) >= 1

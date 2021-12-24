@@ -14,11 +14,11 @@ using ArgParse
          "output"
              help = "Filename for output (csv)"
              arg_type = String
-             default = "monthly_rvs.csv"
+             default = "summary.csv"
          "--input_filename"
              help = "Filename for daily reports (toml)"
              arg_type = String
-             default = "daily_summary_1.toml"
+             default = "daily_summary.toml"
          "--overwrite"
             help = "Specify it's ok to overwrite the output file."
             #default = true
@@ -42,13 +42,13 @@ using ArgParse
 
  input_fn = args["input_filename"]
  input_path = args["input_path"]
- output_fn = args["output"]
+ output_fn = joinpath(input_path,args["output"])
 
-if !(args["overwrite"] || !isfile(args["output"]) || (filesize(args["output"])==0))
-   @error "Can't overwrite " output_filename=args["output"]
+if !(args["overwrite"] || !isfile(output_fn) || (filesize(output_fn)==0))
+   @error "Can't overwrite " output_filename=output_fn
    exit(1)
 else
-   #touch(args["output"])  # Should we create empty file as a lock?
+   #touch(output_fn)  # Should we create empty file as a lock?
 end
 
 @info "# Loading packages"
@@ -92,16 +92,6 @@ df.winsor_rms_rv_drp = map(day->day["rv"]["drp"]["winsor_rms_rv"], daily)
 df_sorted = df |> @orderby( _.mean_bjd ) |> DataFrame
 
 @info "# Writing CSV file"
-CSV.write(args["output"],df_sorted )
+CSV.write(output_fn,df_sorted )
 
-#=
-julia> d
-Dict{String, Any} with 5 entries:
-  "obs_date" => Dict{String, Any}("string"=>Date("2021-12-20"), "mean_bjd"=>2.45957e6)
-  "rv"       => Dict{String, Any}("drp"=>Dict{String, Any}("mean_rv"=>-0.638301, "winsor_rms_rv"=>7.7872e-5, "median_rv"=>-0.638253, "median_σ_rv…
-  "report"   => Dict{String, Any}("input_md5"=>"649267d306710ca1883be5994954fbc1", "date_run"=>DateTime("2021-12-23T20:47:55.700"), "hostname"=>"…
-  "num_rvs"  => Dict{String, Any}("usable"=>114, "good"=>114)
-  "title"    => "NEID Solar Observations Daily Report"
-
-=#
 
