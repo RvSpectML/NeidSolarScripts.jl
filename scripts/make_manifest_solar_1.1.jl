@@ -213,6 +213,7 @@ if fits_target_str == "Sun" || fits_target_str == "Solar"
 
     df_sol = DataFrame(get_solar_info.(df_files_use.bjd,obs=:WIYN))
     df_files_use[!,:alt_sun] = df_sol[!,:alt]
+    df_files_use[!,:az_sun] = df_sol[!,:az]
     df_files_use[!,:airmass] = df_sol[!,:airmass]
     df_files_use[!,:hour_angle] = df_sol[!,:hour_angle]
     df_files_use[!,:sol_dist] = df_sol[!,:sol_dist_au]

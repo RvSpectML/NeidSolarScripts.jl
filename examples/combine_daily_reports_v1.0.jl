@@ -67,13 +67,18 @@ daily = Vector{Dict{String,Any}}(undef, size(files,1) )
 println("files = ", files)
 flush(stdout)
 flush(stderr)
-for (i,file) in enumerate(files)
+j = 0
+for file in files
     if filesize(file) >0 
        @info "# Processing $file"
        d = TOML.parsefile(file) 
-       daily[i] = d
+       global j += 1
+       daily[j] = d
     end
 end
+num_days_with_usable_obs = j
+resize!(daily,num_days_with_usable_obs)
+
 
 @info "# Making dataframe"
 df = DataFrame()

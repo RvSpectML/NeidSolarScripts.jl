@@ -27,12 +27,6 @@ println("# Parsing arguments...")
              help = "Filename for output dailiy RVs (csv)"
              arg_type = String
              default = "daily_rvs.csv"
-#=
-         "report"
-             help = "Filename for summary repork (md)"
-             arg_type = String
-             default = "daily_summary.md"
-=#
          "--overwrite"
             help = "Specify it's ok to overwrite the output file."
             #default = true
@@ -169,8 +163,14 @@ if verbose   println("# Loading other packages 2/2")    end
  file_hashes = Dict{String,String}()
  start_processing_time = now()
 
-println("# Reading daily CCFs from ", daily_ccf_filename)
-input_data = load(daily_ccf_filename)
+if filesize(daily_ccf_filename) > 0
+   println("# Reading daily CCFs from ", daily_ccf_filename)
+   input_data = load(daily_ccf_filename)
+else
+   println("# Empy daily CCF file.  Creating empty ", daily_rvs_filename)
+   touch(daily_rvs_filename)
+   exit(0)
+end
 
 println("# Filtering for usable observations...")
 manifest = input_data["manifest"]
@@ -201,57 +201,19 @@ manifest_use = manifest_use |>
    @take(args["max_num_spectra"] ) |> @orderby(_.bjd) |>
    DataFrame
 
-println("# Found ", size(manifest_use,1), " files of ",  size(manifest,1), " to use for RVs.")
 #@assert size(manifest_use,1) >= 1
-if size(manifest_use,1) >= 1
-   df_out = select(manifest_use,[:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp ], :Δv_diff_ext, :Δfwhm², :solar_hour_angle, :airmass, :sol_dist, :expmeter_mean, :expmeter_rms, [:mean_pyroflux=>:pyrflux_mean, :rms_pyroflux=>:pyrflux_rms], :exptime, :mean_Δt, :Filename)
-   println("# Writing daily RVs.")
-   CSV.write(daily_rvs_filename,df_out)
-else
+if !(size(manifest_use,1) >= 1)
+   println("# No usable observations.  Creating empty ", daily_rvs_filename)
    touch(daily_rvs_filename)
+   exit(0)
 end
 
+println("# Found ", size(manifest_use,1), " files of ",  size(manifest,1), " to use for RVs.")
+   df_out = select(manifest_use,[:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp ], :Δv_diff_ext, :Δfwhm², :solar_hour_angle, :airmass, :sol_dist, :expmeter_mean, :expmeter_rms, [:mean_pyroflux=>:pyrflux_mean, :rms_pyroflux=>:pyrflux_rms], :exptime, :mean_Δt, :Filename)
 
 
-#=
-daily_out = Dict{String,Any}()
-if size(manifest_use,1) >= 1
-   println("# Makinng daily report")
-   daily_mean_bjd = mean(df_out.jd_drp)
-   daily_mean_rv = mean(df_out.rv_drp)
-   daily_median_rv = median(df_out.rv_drp)
-   daily_median_σ_rv = median(df_out.σrv_drp)
-   daily_rms_rvs = sqrt(var(df_out.rv_drp,corrected=false))
-end
-input_md5 = bytes2hex(open(md5,daily_ccf_filename))
 
-if size(manifest_use,1) >= 1
-   report_str = """
-# NEID Solar Observations Daily Report $(args["datestr"])
-- Usable files: $(size(manifest_use,1)) of $(size(manifest,1)) solar observations
-- Daily mean JD: $daily_mean_bjd   $(julian2datetime(daily_mean_bjd))
-- Daily mean RV: $daily_mean_rv
-- Daily median RV: $daily_median_rv
-- Median of σ_RVs: $daily_median_σ_rv
-- Daily RMS of RVs: $daily_rms_rvs
 
----
-This report generated on $(gethostname()) at $(now()) based on CCFs calculated at $(input_data["start_processing_time"]).
-Input file: $(input_data["daily_ccf_filename"])
-Input md5sum: $input_md5
-"""
-else
-   report_str = """
-# NEID Solar Observations Daily Report $(args["datestr"])
-- Usable files: $(size(manifest_use,1)) of $(size(manifest,1)) solar observations
-
----
-This report generated on $(gethostname()) at $(now()) based on CCFs calculated at $(input_data["start_processing_time"]).
-Input file: $(input_data["daily_ccf_filename"])
-Input md5sum: $input_md5
-"""
-end
-
-write(daily_report_filename, report_str)
-=#
+println("# Writing daily RVs.")
+ CSV.write(daily_rvs_filename,df_out)
 
