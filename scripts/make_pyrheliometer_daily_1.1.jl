@@ -92,14 +92,29 @@ else
    if hasproperty(df_in, :l1filename)   df_in = df_in |> @rename(:l1filename => :Filename) |> DataFrame  end
    if hasproperty(df_in, :l2filename)   df_in = df_in |> @rename(:l2filename => :Filename) |> DataFrame  end
    if hasproperty(df_in, :filename)     df_in = df_in |> @rename(:filename => :Filename) |> DataFrame    end
-   target_datestr = nothing
-   target_date = nothing
+   m = match(r"(\d{4})\/(\d{2})\/(\d{2})\/",manifest_fn)
+   if isnothing(m) || (length(m.captures) != 3)
+      target_datestr = nothing
+      target_date = nothing
+      println("# Empty ", manifest_fn, " and can't figure out date to query.  Giving up.")
+      error(0)
+   else
+      @assert length(m.captures) == 3
+      year  = parse(Int64,m[1])
+      month = parse(Int64,m[2])
+      day   = parse(Int64,m[3])
+      @assert 2020 <= year <= 2040
+      @assert 1 <= month <= 12
+      @assert 1 <= day <= 31
+      target_datestr = args["manifest_or_date"]
+      target_date = Date(m[1]*m[2]*m[3],DateFormat("yyyymmdd"))
+   end
 end
 
 using TOML
 using NeidArchive
 
-if size(df_in,1) == 0
+if (size(df_in,1) == 0) && (!isnothing(target_date))
    if isnothing(args["user"]) || isnothing(args["password"])
       nexsci_dict = TOML.parsefile(nexsci_login_fn)
       user_nexsci = nexsci_dict["user"]
