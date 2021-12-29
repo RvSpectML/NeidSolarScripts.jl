@@ -93,7 +93,7 @@ for file in files
        =#
        @info "# Processing $file"
        d = CSV.read(file,DataFrame)
-       if in(Date(julian2datetime(first(d.jd_drp))), df_exclude.date_to_exclude) continue end
+       if hasproperty(df_exclude,:date_to_exclude) && in(Date(julian2datetime(first(d.jd_drp))), df_exclude.date_to_exclude) continue end
        global j += 1
        daily[j] = d
     end
