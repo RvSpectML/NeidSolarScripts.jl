@@ -209,11 +209,10 @@ if !(size(manifest_use,1) >= 1)
 end
 
 println("# Found ", size(manifest_use,1), " files of ",  size(manifest,1), " to use for RVs.")
-   df_out = select(manifest_use,[:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp ], :Δv_diff_ext, :Δfwhm², :solar_hour_angle, :airmass, :sol_dist, :expmeter_mean, :expmeter_rms, [:mean_pyroflux=>:pyrflux_mean, :rms_pyroflux=>:pyrflux_rms], :exptime, :mean_Δt, :Filename)
-
-
-
-
+#   df_out = select(manifest_use,[:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp ], :Δv_diff_ext, :Δfwhm², :solar_hour_angle, :airmass, :stel,:staz,:alt_sun,:az_sun, :sol_dist, :expmeter_mean, :expmeter_rms, [:mean_pyroflux=>:pyrflux_mean, :rms_pyroflux=>:pyrflux_rms], :exptime, :mean_Δt, :Filename)
+   df_out = manifest_use |> @rename(:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp, 
+                                    :mean_pyroflux=>:pyrflux_mean, :rms_pyroflux=>:pyrflux_rms ) |> DataFrame 
+ 
 println("# Writing daily RVs.")
  CSV.write(daily_rvs_filename,df_out)
 
