@@ -432,15 +432,16 @@ pipeline_plan = PipelinePlan()
  # For v1.1.*
  all_spectra = Spectra2DBasic{Float64, Float64, Float32, Matrix{Float64}, Matrix{Float64}, Matrix{Float32}, NEID2D}[]
  spec = NEID.read_data(first(eachrow(df_files_use)).Filename, normalization=:blaze )
+ mean_lambda = zeros(Float64,size(spec.flux));
  mean_clean_flux = zeros(Float64,size(spec.flux));
  mean_clean_var = zeros(Float64,size(spec.flux));
- #mean_clean_weight_sum = zeros(Float64,size(spec.flux));
+ mean_clean_flux_weight_sum = 0.0;
  mean_clean_flux_sed_normalized = zeros(Float64,size(spec.flux));
  mean_clean_var_sed_normalized = zeros(Float64,size(spec.flux));
- #mean_clean_flux_sed_normalized_weight_sum = zeros(Float64,size(spec.flux));
+ mean_clean_flux_sed_normalized_weight_sum = 0.0;
  mean_clean_flux_continuum_normalized = zeros(Float64,size(spec.flux));
  mean_clean_var_continuum_normalized = zeros(Float64,size(spec.flux));
- #mean_clean_flux_continuum_normalized_weight_sum = zeros(Float64,size(spec.flux));
+ mean_clean_flux_continuum_normalized_weight_sum = 0.0;
  normalization_anchors_list = [];
  for (i,row) in enumerate(eachrow(df_files_use))
     if !(isfile(row.Filename)||islink(row.Filename))
@@ -458,10 +459,12 @@ pipeline_plan = PipelinePlan()
     local spec = NEID.read_data(row, normalization=:blaze )
     #file_hashes[row.Filename] = bytes2hex(sha256(row.Filename))
     file_hashes[row.Filename] = bytes2hex(open(md5,row.Filename))
-    weights = 1
+    weight = 1
     if row.Filename ∈ df_files_cleanest.Filename
-            mean_clean_flux .+= spec.flux # .*weights
-            mean_clean_var .+= spec.var # .*weights
+            mean_lambda .+= spec.λ
+            mean_clean_flux .+= spec.flux # .*weight
+            mean_clean_var .+= spec.var # .*weight
+            global mean_clean_flux_weight_sum += weight
     end
 
     #=
@@ -478,15 +481,17 @@ pipeline_plan = PipelinePlan()
       @warn("DRP v1.1 now provides blaze in L2 file.  This script has not been updated to use explicit an SED model.") 
       (f_norm, var_norm) = Continuum.normalize_by_sed(spec.λ,spec.flux,spec.var, sed; poly_order = args["order_poly_continuum"], half_width = args["continuum_poly_half_width"], quantile = args["quantile_fit_continuum"], orders_to_use=orders_to_use_for_continuum)
       if row.Filename ∈ df_files_cleanest.Filename
-            mean_clean_flux_sed_normalized .+= f_norm # .*weights
-            mean_clean_var_sed_normalized .+= var_norm # .*weights
+            mean_clean_flux_sed_normalized .+= f_norm # .*weight
+            mean_clean_var_sed_normalized .+= var_norm # .*weight
+            global mean_clean_flux_sed_normalized_weight_sum +=  weight
       end
     else
         f_norm = spec.flux
         var_norm = spec.var
     end
 
-    if args["apply_continuum_normalization"]==true && args["continuum_normalization_individually"]==true
+ 
+   if args["apply_continuum_normalization"]==true && args["continuum_normalization_individually"]==true
         local anchors, continuum, f_filtered
         if args["anchors_filename"] != nothing
             @assert isfile(args["anchors_filename"]) && filesize(args["anchors_filename"])>0
@@ -508,9 +513,9 @@ pipeline_plan = PipelinePlan()
         f_norm ./= continuum
         var_norm ./= continuum.^2
         if row.Filename ∈ df_files_cleanest.Filename
-                mean_clean_flux_continuum_normalized .+= f_norm # .*weights
-                mean_clean_var_continuum_normalized .+= var_norm # .*weights
-#                mean_clean_var_continuum_normalized_weight_sum .+= weights
+                mean_clean_flux_continuum_normalized .+= f_norm # .*weight
+                mean_clean_var_continuum_normalized .+= var_norm # .*weight
+                global mean_clean_flux_continuum_normalized_weight_sum += weight
             end
         spec.flux .= f_norm
         spec.var .= var_norm
@@ -521,9 +526,6 @@ pipeline_plan = PipelinePlan()
  GC.gc()
  dont_need_to!(pipeline_plan,:read_spectra);
 
- #mean_clean_flux ./= mean_clean_flux_weight_sum
- #mean_clean_flux_sed_normalized ./= mean_clean_flux_continuum_normalized_weight_sum
- #mean_clean_flux_continuum_normalized ./= mean_clean_flux_continuum_normalized_weight_sum
 
  if args["apply_continuum_normalization"]==true && !(args["continuum_normalization_individually"] == true)
      println("# Computing continuum normalization from mean spectra.")
@@ -545,18 +547,26 @@ pipeline_plan = PipelinePlan()
     end
     normalization_anchors_list = anchors
 
+    weight = 1
     for (i,row) in enumerate(eachrow(df_files_use))
         (anchors, continuum, f_filtered) = Continuum.calc_continuum(all_spectra[i].λ, all_spectra[i].flux, all_spectra[i].var,
                     anchors, smoothing_half_width = args["smoothing_half_width"], orders_to_use=orders_to_use_for_continuum)
         all_spectra[i].flux ./= continuum
         all_spectra[i].var ./= continuum.^2
         if row.Filename ∈ df_files_cleanest.Filename
-            mean_clean_flux_continuum_normalized .+= all_spectra[i].flux # .*weights
-            mean_clean_var_continuum_normalized .+= all_spectra[i].var # .*weights
-            #                mean_clean_var_continuum_normalized_weight_sum .+= weights
+            mean_clean_flux_continuum_normalized .+= all_spectra[i].flux # .*weight
+            mean_clean_var_continuum_normalized .+= all_spectra[i].var # .*weight
+            global mean_clean_flux_continuum_normalized_weight_sum += weight
         end
     end
  end
+mean_lambda ./= mean_clean_flux_weight_sum
+  mean_clean_flux ./= mean_clean_flux_weight_sum
+  mean_clean_var ./= mean_clean_flux_weight_sum
+  mean_clean_flux_sed_normalized ./= mean_clean_flux_sed_normalized_weight_sum
+  mean_clean_var_sed_normalized ./= mean_clean_flux_sed_normalized_weight_sum
+  mean_clean_flux_continuum_normalized ./= mean_clean_flux_continuum_normalized_weight_sum
+  mean_clean_var_continuum_normalized ./= mean_clean_flux_continuum_normalized_weight_sum
 
  order_list_timeseries = extract_orders(all_spectra, pipeline_plan,  orders_to_use=orders_to_use, remove_bad_chunks=false, recalc=true )
 
@@ -624,18 +634,20 @@ println("# Saving results to ", daily_ccf_filename, ".")
     f["v_grid"] = v_grid_order_ccfs
     f["order_ccfs"] = order_ccfs
     f["order_ccf_vars"] = order_ccf_vars
+    f["Δfwhm"] = Δfwhm 
     f["orders_to_use"] = orders_to_use
     f["manifest"] = df_files_use
     f["calc_order_ccf_args"] = args
     f["ccf_line_list"] = line_list_espresso
-    if size(df_files_cleanest,1) >= 1
+    if (size(df_files_cleanest,1) >= 1) && any(.!iszero.(mean_clean_flux))
+      f["mean_lambda"] = mean_lambda
       f["mean_clean_flux"] = mean_clean_flux
       f["mean_clean_var"] = mean_clean_var
-      if size(mean_clean_flux_sed_normalized,1) > 0
+      if (size(mean_clean_flux_sed_normalized,1) > 0) && any(.!iszero.(mean_clean_flux_sed_normalized)) && any(.!isnan.(mean_clean_flux_sed_normalized))
           f["mean_clean_flux_sed_normalized"] = mean_clean_flux_sed_normalized
           f["mean_clean_var_sed_normalized"] = mean_clean_var_sed_normalized
       end
-      if size(mean_clean_flux_continuum_normalized,1) > 0
+      if (size(mean_clean_flux_continuum_normalized,1) > 0) && any(.!iszero(mean_clean_flux_continuum_normalized))  && any(.!isnan.(mean_clean_flux_continuum_normalized))
           f["mean_clean_flux_continuum_normalized"] = mean_clean_flux_continuum_normalized
           f["mean_clean_var_continuum_normalized"] = mean_clean_var_continuum_normalized
       end
