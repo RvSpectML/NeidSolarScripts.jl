@@ -4,7 +4,7 @@ verbose = true
  if verbose && !isdefined(Main,:RvSpectML)  println("# Loading RvSpecML")    end
  #using RvSpectMLBase
  #using EchelleInstruments#, EchelleInstruments.NEID
- #using RvSpectML
+ using RvSpectML
  if verbose println("# Loading NeidSolarScripts")    end
  #using SunAsAStar
  using NeidSolarScripts
@@ -167,6 +167,9 @@ df_use = df_use |>
    @take(args["max_num_spectra"] ) |> @orderby(_.jd_drp) |>
    DataFrame
 
+(times_binned, rvs_binned) = bin_times_and_rvs_max_Δt(times=df_use.jd_drp, rvs=df_use.rv_drp, Δt_threshold=6/(60*24))
+#rms_rvs_binned = std(rvs_binned,corrected=false)
+
 println("# Found ", size(df_use,1), " files of ",  size(df_use,1), " to use for RVs.")
 daily_out = OrderedDict{String,Any}()
 #@assert size(df_use,1) >= 1
@@ -190,6 +193,7 @@ if size(df_use,1) >= 1
       rv_drp["median_rv"] = median(df_use.rv_drp)
       rv_drp["median_σ_rv"] = median(df_use.σrv_drp)
       rv_drp["rms_rvs"] = sqrt(var(df_use.rv_drp,corrected=false))
+      rv_drp["rms_binned_rvs"] = sqrt(var(rvs_binned,corrected=false))
       rv_drp["winsor_mean_rv"] = mean(winsor(df_use.rv_drp,prop=0.025))
       rv_drp["winsor_rms_rv"] = sqrt(trimvar(df_use.rv_drp,prop=0.025))
    rv = OrderedDict{String,Any}("drp"=>rv_drp)
