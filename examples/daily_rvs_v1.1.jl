@@ -180,7 +180,7 @@ manifest_use = manifest |>
  @filter( args["datestr"] == nothing || occursin(args["datestr"],_.target) ) |>
  @filter( _.driftfun == "dailymodel0" ) |>
  @filter( args["max_airmass"] == nothing || _.airmass <= args["max_airmass"] ) |>
- @filter( args["max_solar_hour_angle"] == nothing || abs(_.solar_hour_angle) <= args["max_solar_hour_angle"] ) |>
+ @filter( args["max_solar_hour_angle"] == nothing || abs(_.hour_angle) <= args["max_solar_hour_angle"] ) |>
  #@filter( args["start_time"] == nothing || Time(julian2datetime(_.bjd)) >= start_time ) |>
  #@filter( args["stop_time"] == nothing || Time(julian2datetime(_.bjd)) <= stop_time ) |> # TODO for other instruments may need to deal wtih cross end of 24 UTC
  @filter( args["min_expmeter"] == nothing || _.expmeter_mean >= args["min_expmeter"] ) |> 

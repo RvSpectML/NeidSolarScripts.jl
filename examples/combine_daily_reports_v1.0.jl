@@ -109,13 +109,13 @@ function array_of_dict_to_dataframe( aod::AOD; first_cols::AbstractVector{String
       if !haskey(first(aod), k) || in(k, exclude_cols)
          continue 
       end 
-      df[!,k] = map(i->aod[i][k],1:size(aod,1)) 
+      df[!,k] = map(i->haskey(aod[i],k) ? aod[i][k] : missing,1:size(aod,1)) 
   end
   for k in sort!(collect(keys(first(aod))))
       if in(k, first_cols) || in(k, exclude_cols) 
          continue
       end
-      df[!,k] = map(i->aod[i][k],1:size(aod,1)) 
+      df[!,k] = map(i->haskey(aod[i],k) ? aod[i][k] : missing,1:size(aod,1)) 
   end
   return df
 end
@@ -145,7 +145,8 @@ resize!(daily,num_days_with_usable_obs)
 @info "# Making dataframe"
 daily_flat = flatten_dict.(daily)
 first_cols = ["obs_date.string", "obs_date.mean_bjd","num_rvs.good"]
-cols_to_exclude = ["report.hostname", "title", "report.input_md5", "report.input_file"]
+cols_to_exclude = ["report.hostname", "title", "report.input_md5", "report.input_file","report.date_run","report.input_ctime",
+                   "report.versions.EchelleCCFs","report.versions.EchelleInstruments","report.versions.NeidSolarScripts","report.versions.RvSpectML","report.versions.RvSpectMLBase","report.versions.SunAsAStar"]
 df =  array_of_dict_to_dataframe( daily_flat, first_cols=first_cols, exclude_cols=cols_to_exclude )
 
 @info "# Sorting dataframe"

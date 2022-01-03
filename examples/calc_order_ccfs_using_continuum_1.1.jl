@@ -69,9 +69,12 @@ println("# Parsing arguments...")
       add_arg_group!(s, "Line list parameters", :argg_line_list_param)
       @add_arg_table! s begin
          "--line_list_filename"
-             help = "Line list file"
+             help = "Line list filename (input)"
              arg_type = String
              #default = joinpath(pkgdir(NeidSolarScripts),"data","solar_line_list_espresso.csv")
+         "--line_list_output_filename"
+             help = "Line list filename (output)"
+             arg_type = String
          "--recompute_line_weights"
              help = "Force recalculation of SNR-based line weight factors."
              action = :store_true
@@ -98,6 +101,9 @@ println("# Parsing arguments...")
              help = "Filename for anchor locations to use in computing continuum to normalize by."
              arg_type = String
              #default = "/home/eford/Code/RvSpectMLEcoSystem/NeidSolarScripts/data/neidMaster_HR_SmoothLampSED_20210101.fits"
+        "--anchors_filename_output"
+             help = "Filename to write anchor locations to use in computing continuum to normalize by."
+             arg_type = String
          "--smoothing_half_width"
              help = "Half width for window to use for smoothing prior to findind local maximum."
              arg_type = Int64
@@ -191,7 +197,8 @@ println("# Parsing arguments...")
          "--max_num_spectra_clean"
             help = "Maximum number of spectra to include in clean spectrum."
             arg_type = Int
-            default = 65  # based on 60 minutes of integration time from 55s exposures
+            default = 130  # based on 120 minutes of integration time from 55s exposures
+            #default = 65  # based on 60 minutes of integration time from 55s exposures
       end
 
      return parse_args(s)
@@ -326,8 +333,8 @@ if verbose println("# Reading manifest of files to process.")  end
     if args["target"] == "Sun" || args["target"] == "Solar"
       @assert hasproperty(df_files,:alt_sun)  # TODO: Compute if not avaliable?
       @assert hasproperty(df_files,:Δfwhm²)   # TODO: Compute if not avaliable?
-      if !hasproperty(df_files,:solar_hour_angle)
-         df_files[!,"solar_hour_angle"] = SolarRotation.get_solar_hour_angle(df_files.bjd,obs=:WIYN)
+      if !hasproperty(df_files,:hour_angle)
+         df_files[!,"hour_angle"] = SolarRotation.get_solar_hour_angle(df_files.bjd,obs=:WIYN)
       end
       #if eltype(df_files[!,:order_snrs]) == String   # TODO: Compute if not avaliable?
     end
@@ -367,7 +374,7 @@ if verbose println("# Reading manifest of files to process.")  end
     @filter( args["max_airmass"] == nothing || _.airmass <= args["max_airmass"] ) |>
     DataFrame
   df_files_use = df_files_use |>   
-    @filter( args["max_solar_hour_angle"] == nothing || abs(_.solar_hour_angle) <= args["max_solar_hour_angle"] ) |>
+    @filter( args["max_solar_hour_angle"] == nothing || abs(_.hour_angle) <= args["max_solar_hour_angle"] ) |>
     DataFrame
   df_files_use = df_files_use |>   
     @filter( args["start_time"] == nothing || Time(julian2datetime(_.bjd)) >= start_time ) |>
@@ -409,12 +416,14 @@ df_files_cleanest = df_files_use |>
     @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
     #@filter( _.airmass <= 2.0 ) |>
     @filter( _.airmass <= args["max_airmass_clean"] ) |>
-    @filter( abs(_.solar_hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
-    @orderby( abs(_.solar_hour_angle) ) |> 
+    @filter( abs(_.hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
+    @orderby( abs(_.hour_angle) ) |> 
     @take(args["max_num_spectra_clean"] ) |>
     DataFrame
   println("# Found ", size(df_files_cleanest,1), " files considered clean.")
   #@assert size(df_files_cleanest,1) >= 1
+
+clean_obs_mask = map(fn->in(fn, df_files_cleanest.Filename),df_files_use.Filename) 
 
 if verbose println(now()) end
 
@@ -534,16 +543,20 @@ pipeline_plan = PipelinePlan()
          @assert isfile(args["anchors_filename"]) && filesize(args["anchors_filename"])>0
          anchors = load(args["anchors_filename"],"anchors")
      else
+         println("# Computing Continuum model.")
          if @isdefined sed
              @warn("DRP v1.1 now provides blaze in L2 file.  This script has not been updated to use explicit an SED model.") 
              (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, mean_clean_flux_sed_normalized, mean_clean_var_sed_normalized; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
                 stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
                 orders_to_use = orders_to_use_for_continuum, verbose = false )
+            save(args["anchors_filename_output"], Dict("anchors" => anchors) )
         else
             (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, mean_clean_flux, mean_clean_var; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
                 stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
                 orders_to_use = orders_to_use_for_continuum, verbose = false )
+            save(args["anchors_filename_output"], Dict("anchors" => anchors) )
         end
+        println("# Stored anchors used for continuum model.")
     end
     normalization_anchors_list = anchors
 
@@ -575,7 +588,9 @@ line_width = line_width_50_default
  max_mask_scale_factor = max(mask_scale_factor, max(lsf_width,
                              line_width/sqrt(8*log(2)))/default_ccf_mask_v_width(NEID2D())) # 4.0
  max_bc = RvSpectMLBase.max_bc
- #max_bc = RvSpectMLBase.max_bc_earth_rotation
+ if args["target"] == Sun || args["target"] == "Solar"
+    max_bc = RvSpectMLBase.max_bc_solar
+ end
  #max_orders = min_order(NEID2D()):max_order(NEID2D())
  #good_orders = orders_to_use_default(NEID2D())
  #orders_to_use = max_orders
@@ -589,11 +604,16 @@ line_width = line_width_50_default
     #orders_to_use = good_orders
     #order_list_timeseries = extract_orders(all_spectra,pipeline_plan, orders_to_use=orders_to_use, recalc=true )
     touch(line_list_filename)
-    #line_list_filename = "G2.espresso.mas"
-    linelist_for_ccf_fn_w_path = joinpath(pkgdir(EchelleCCFs),"data","masks",line_list_filename)
-    line_list_espresso = prepare_line_list(linelist_for_ccf_fn_w_path, all_spectra, pipeline_plan, v_center_to_avoid_tellurics=ccf_mid_velocity,
+    if (isfile(line_list_filename) && (filesize(line_list_filename)>0))
+        line_list_input_filename = line_list_filename
+    else
+        line_list_input_filename = joinpath(pkgdir(EchelleCCFs),"data","masks","espresso+neid_mask_97_to_108.mas")
+    end
+    line_list_espresso = prepare_line_list(line_list_input_filename, all_spectra, pipeline_plan, v_center_to_avoid_tellurics=ccf_mid_velocity,
        Δv_to_avoid_tellurics = 2*max_bc+range_no_mask_change*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID2D()), orders_to_use=#=orders_to_use=#56:108, recalc=true, verbose=true)
-    #CSV.write(line_list_filename, line_list_espresso)
+     if args["recompute_line_weights"] && !isnothing(args["line_list_output_filename"])
+        CSV.write(args["line_list_output_filename"], line_list_espresso)
+     end
  end
  #file_hashes[line_list_filename] = bytes2hex(sha256(line_list_filename))
  file_hashes[line_list_filename] = bytes2hex(open(md5,line_list_filename))
@@ -637,6 +657,7 @@ println("# Saving results to ", daily_ccf_filename, ".")
     f["Δfwhm"] = Δfwhm 
     f["orders_to_use"] = orders_to_use
     f["manifest"] = df_files_use
+    f["clean_obs_mask"] = clean_obs_mask
     f["calc_order_ccf_args"] = args
     f["ccf_line_list"] = line_list_espresso
     if (size(df_files_cleanest,1) >= 1) && any(.!iszero.(mean_clean_flux))
