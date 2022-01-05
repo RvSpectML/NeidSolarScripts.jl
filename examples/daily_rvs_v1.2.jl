@@ -2,6 +2,7 @@ verbose = true
  using Dates
  if verbose println(now()) end
  if verbose && !isdefined(Main,:RvSpectML)  println("# Loading RvSpecML")    end
+ using PDMats  # SOme dependancy needs this explicit first
  using RvSpectMLBase
  using EchelleCCFs
  using EchelleInstruments#, EchelleInstruments.NEID
@@ -59,6 +60,14 @@ println("# Parsing arguments...")
             arg_type = String
             default = "template"
             #default = "gaussian"
+         "--frac_of_width_to_fit"
+            help = "Regions of CCF to fit, as fraction of measured width."
+            arg_type = Float64
+            default = 0.5
+         "--measure_width_at_frac_depth"
+            help = "Measure CCF width at this fractional depth."
+            arg_type = Float64
+            default = 0.5
          "--template_file"
             help = "Filename with CCF template stored as 'order_ccfs' with 'clean_obs_mask' for which observations to include (jld2)."
             arg_type = String
@@ -138,8 +147,7 @@ println("# Parsing arguments...")
             arg_type = Int
             default = 300   # TODO: Increase  after finish testing
       end
-
-     return parse_args(s)
+      return parse_args(s)
  end
  args = parse_commandline()
  @assert any(map(alg->occursin(alg,args["rv_alg"]), ["template","gaussian","quadratic"] ))
@@ -196,21 +204,21 @@ manifest_use = manifest |>
  @filter( args["max_solar_hour_angle"] == nothing || abs(_.hour_angle) <= args["max_solar_hour_angle"] ) |>
  #@filter( args["start_time"] == nothing || Time(julian2datetime(_.bjd)) >= start_time ) |>
  #@filter( args["stop_time"] == nothing || Time(julian2datetime(_.bjd)) <= stop_time ) |> # TODO for other instruments may need to deal wtih cross end of 24 UTC
- @filter( args["min_expmeter"] == nothing || _.expmeter_mean >= args["min_expmeter"] ) |> 
+ @filter( args["min_expmeter"] == nothing || _.expmeter_mean >= args["min_expmeter"] ) |>
  DataFrame
 
 if hasproperty(manifest_use,:mean_pyroflux) && hasproperty(manifest_use,:rms_pyroflux)
-   manifest_use = manifest_use |> 
+   manifest_use = manifest_use |>
       @filter( args["max_pyrhelio_frac_rms"] == nothing || _.rms_pyroflux <= args["max_pyrhelio_frac_rms"] * _.mean_pyroflux ) |>
       DataFrame
 else
    println("# Warning:  mean_pyroflux and rms_pyroflux not found.  Reverting to expmeter_mean and expmeter_rms.")
-   manifest_use = manifest_use |> 
+   manifest_use = manifest_use |>
       @filter( args["max_expmeter_frac_rms"] == nothing || _.expmeter_rms <= args["max_expmeter_frac_rms"] * _.expmeter_mean ) |>
       DataFrame
 end
 
-manifest_use = manifest_use |> 
+manifest_use = manifest_use |>
    @take(args["max_num_spectra"] ) |> @orderby(_.bjd) |>
    DataFrame
 
@@ -222,7 +230,7 @@ end
 
 obs_to_use = map(i->searchsortedfirst(manifest.bjd,manifest_use.bjd[i]),1:size(manifest_use,1) )
 (num_vels, num_orders_to_use, num_obs) = size(input_data["order_ccfs"])
- 
+
 order_ccfs = input_data["order_ccfs"]
 order_ccf_vars = input_data["order_ccf_vars"]
 non_nan_mask = map(i->(!any(isnan.(view(order_ccfs,:,:,i)))) && (!any(isnan.(view(order_ccf_vars,:,:,i)))), obs_to_use)
@@ -237,9 +245,9 @@ if !(sum(mask) >= 1)
 end
 
 println("# Found ", length(obs_to_use), " files of ",  size(manifest,1), " to use for RVs.")
-   #df_out = manifest_use |> @rename(:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp, 
-   df_out = manifest |> @rename(:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp, 
-                                    :mean_pyroflux=>:pyrflux_mean, :rms_pyroflux=>:pyrflux_rms ) |> DataFrame 
+   #df_out = manifest_use |> @rename(:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp,
+   df_out = manifest |> @rename(:drp_ccfjdmod=>:jd_drp,:drp_ccfrvmod => :rv_drp,:drp_dvrmsmod => :σrv_drp,
+                                    :mean_pyroflux=>:pyrflux_mean, :rms_pyroflux=>:pyrflux_rms ) |> DataFrame
    df_out[!,"mask"] = mask
 
 ccf_sum = reshape(sum(order_ccfs,dims=2),num_vels,num_obs)
@@ -253,7 +261,7 @@ v_grid = collect(input_data["v_grid"])
 if occursin("template",args["rv_alg"])
    if isnothing(args["template_file"])
       template_ccf = view(ccf_sum,:,obs_to_use)
-      template_ccf_var = view(ccf_var_sum,:,obs_to_use) 
+      template_ccf_var = view(ccf_var_sum,:,obs_to_use)
    else
       template_filename = args["template_file"]
       @assert isfile(template_filename) || islink(template_filename)
@@ -272,20 +280,20 @@ if occursin("template",args["rv_alg"])
       template_ccf_var = reshape(sum(view(template_order_ccf_vars,:,:,template_obs_to_use),dims=2),num_vels,template_num_obs)
    end
    #ccf_template = EchelleCCFs.calc_ccf_template(view(ccf_sum,:,obs_to_use), view(ccf_var_sum,:,obs_to_use) )
-   ccf_template = EchelleCCFs.calc_ccf_template(template_ccf, template_ccf_var)
+   ccf_template = EchelleCCFs.calc_ccf_template(template_ccf, template_ccf_var,frac_of_width_to_fit=args["frac_of_width_to_fit"], measure_width_at_frac_depth=args["measure_width_at_frac_depth"])
    alg_template = MeasureRvFromCCFTemplate(v_grid=collect(v_grid),template=ccf_template)
    rvs_template = DataFrame(map(i->any(isnan.(view(ccf_sum,:,i))) ? (rv=NaN, σ_rv=NaN) : measure_rv_from_ccf(v_grid,view(ccf_sum,:,i),view(ccf_var_sum,:,i),alg=alg_template),1:num_obs))
    df_out[!,Symbol("rv_template")] = rvs_template.rv
    df_out[!,Symbol("σrv_template")] = rvs_template.σ_rv
 end
 if occursin("gaussian",args["rv_alg"])
-   alg_gauss = MeasureRvFromCCFGaussian(frac_of_width_to_fit=0.25)
+   alg_gauss = MeasureRvFromCCFGaussian(frac_of_width_to_fit=args["frac_of_width_to_fit"], measure_width_at_frac_depth=args["measure_width_at_frac_depth"])
    rvs_gauss = DataFrame(map(i->any(isnan.(view(ccf_sum,:,i))) ? (rv=NaN, σ_rv=NaN)  : measure_rv_from_ccf(v_grid,view(ccf_sum,:,i),view(ccf_var_sum,:,i),alg=alg_gauss),1:num_obs))
-   df_out[!,Symbol("rv_gaussian")] = rvs_gauss.rv
+   df_out[!,Symbol("rv_template")]= rvs_gauss.rv
    df_out[!,Symbol("σrv_gaussian")] = rvs_gauss.σ_rv
 end
 if occursin("quadratic",args["rv_alg"])
-   alg_quad = MeasureRvFromCCFQuadratic(frac_of_width_to_fit=0.25)
+   alg_quad = MeasureRvFromCCFQuadratic(frac_of_width_to_fit=args["frac_of_width_to_fit"], measure_width_at_frac_depth=args["measure_width_at_frac_depth"])
    rvs_quad = DataFrame(map(i->any(isnan.(view(ccf_sum,:,i))) ? (rv=NaN, σ_rv=NaN)  : measure_rv_from_ccf(v_grid,view(ccf_sum,:,i),view(ccf_var_sum,:,i),alg=alg_quad),1:num_obs))
    df_out[!,Symbol("rv_quadratic")] = rvs_quad.rv
    df_out[!,Symbol("σrv_quadratic")] = rvs_quad.σ_rv
@@ -299,15 +307,15 @@ for j in 1:num_orders_to_use
    # Templated-based
    if isnothing(args["template_file"])
       global template_ccf = view(order_ccfs,:,j,obs_to_use)
-      global template_ccf_var = view(order_ccf_vars,:,j,obs_to_use) 
+      global template_ccf_var = view(order_ccf_vars,:,j,obs_to_use)
    else
       global template_ccf = view(template_order_ccfs,:,j,template_obs_to_use)
-      global template_ccf_var = view(template_order_ccf_vars,:,j,template_obs_to_use) 
+      global template_ccf_var = view(template_order_ccf_vars,:,j,template_obs_to_use)
    end
    #local ccf_template = EchelleCCFs.calc_ccf_template(view(order_ccfs,:,j,obs_to_use), view(order_ccf_vars,:,j,obs_to_use) )
    local ccf_template = EchelleCCFs.calc_ccf_template(template_ccf, template_ccf_var)
-   local alg_template = MeasureRvFromCCFTemplate(v_grid=collect(v_grid),template=ccf_template)
-   order_rvs_template = DataFrame(map(i->any(isnan.(view(order_ccfs,:,j,i))) ? (rv=NaN, σ_rv=NaN) : measure_rv_from_ccf(v_grid,view(order_ccfs,:,j,i),view(order_ccf_vars,:,j,i),alg=alg_template),1:num_obs)) 
+   local alg_template = MeasureRvFromCCFTemplate(v_grid=collect(v_grid),template=ccf_template, frac_of_width_to_fit=args["frac_of_width_to_fit"], measure_width_at_frac_depth=args["measure_width_at_frac_depth"])
+   order_rvs_template = DataFrame(map(i->any(isnan.(view(order_ccfs,:,j,i))) ? (rv=NaN, σ_rv=NaN) : measure_rv_from_ccf(v_grid,view(order_ccfs,:,j,i),view(order_ccf_vars,:,j,i),alg=alg_template),1:num_obs))
    df_out[!,Symbol("rv_" * string(orders_physical[j]) * "_template")] = order_rvs_template.rv
    df_out[!,Symbol("σrv_" * string(orders_physical[j]) * "_template")] = order_rvs_template.σ_rv
    end
@@ -327,4 +335,3 @@ end
 
 println("# Writing daily RVs.")
  CSV.write(daily_rvs_filename,df_out)
-
