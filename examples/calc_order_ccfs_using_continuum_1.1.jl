@@ -500,7 +500,8 @@ pipeline_plan = PipelinePlan()
     end
 
  
-   if args["apply_continuum_normalization"]==true && args["continuum_normalization_individually"]==true
+   if args["apply_continuum_normalization"] && args["continuum_normalization_individually"]
+        println("Applying continuum normalization to each spectrum individually.")
         local anchors, continuum, f_filtered
         if args["anchors_filename"] != nothing
             @assert isfile(args["anchors_filename"]) && filesize(args["anchors_filename"])>0
@@ -525,7 +526,7 @@ pipeline_plan = PipelinePlan()
                 mean_clean_flux_continuum_normalized .+= f_norm # .*weight
                 mean_clean_var_continuum_normalized .+= var_norm # .*weight
                 global mean_clean_flux_continuum_normalized_weight_sum += weight
-            end
+        end
         spec.flux .= f_norm
         spec.var .= var_norm
 
@@ -533,11 +534,16 @@ pipeline_plan = PipelinePlan()
     push!(all_spectra,spec)
  end
  GC.gc()
+ mean_lambda ./= mean_clean_flux_weight_sum
+ mean_clean_flux ./= mean_clean_flux_weight_sum
+ mean_clean_var ./= mean_clean_flux_weight_sum
+ mean_clean_flux_sed_normalized ./= mean_clean_flux_sed_normalized_weight_sum
+ mean_clean_var_sed_normalized ./= mean_clean_flux_sed_normalized_weight_sum
  dont_need_to!(pipeline_plan,:read_spectra);
 
 
- if args["apply_continuum_normalization"]==true && !(args["continuum_normalization_individually"] == true)
-     println("# Computing continuum normalization from mean spectra.")
+ if args["apply_continuum_normalization"] && !args["continuum_normalization_individually"]
+     println("Applying continuum normalization based on mean of clean spectra.")
      local anchors, continuum, f_filtered
      if args["anchors_filename"] !=nothing
          @assert isfile(args["anchors_filename"]) && filesize(args["anchors_filename"])>0
@@ -549,15 +555,20 @@ pipeline_plan = PipelinePlan()
              (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, mean_clean_flux_sed_normalized, mean_clean_var_sed_normalized; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
                 stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
                 orders_to_use = orders_to_use_for_continuum, verbose = false )
-            save(args["anchors_filename_output"], Dict("anchors" => anchors) )
+            if !isnothing(args["anchors_filename_output"])
+                println("# Storing anchors used for continuum model in ",args["anchors_filename_output"],  ".")
+                save(args["anchors_filename_output"], Dict("anchors" => anchors) )
+            end
         else
             (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, mean_clean_flux, mean_clean_var; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
                 stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
                 orders_to_use = orders_to_use_for_continuum, verbose = false )
-            save(args["anchors_filename_output"], Dict("anchors" => anchors) )
-        end
-        println("# Stored anchors used for continuum model.")
-    end
+            if !isnothing(args["anchors_filename_output"])
+                println("# Storing anchors used for continuum model in ",args["anchors_filename_output"],  ".")
+                save(args["anchors_filename_output"], Dict("anchors" => anchors) )
+            end
+        end # @isdefined sed
+    end # args["anchors_filename"] 
     normalization_anchors_list = anchors
 
     weight = 1
@@ -573,13 +584,8 @@ pipeline_plan = PipelinePlan()
         end
     end
  end
-mean_lambda ./= mean_clean_flux_weight_sum
-  mean_clean_flux ./= mean_clean_flux_weight_sum
-  mean_clean_var ./= mean_clean_flux_weight_sum
-  mean_clean_flux_sed_normalized ./= mean_clean_flux_sed_normalized_weight_sum
-  mean_clean_var_sed_normalized ./= mean_clean_flux_sed_normalized_weight_sum
-  mean_clean_flux_continuum_normalized ./= mean_clean_flux_continuum_normalized_weight_sum
-  mean_clean_var_continuum_normalized ./= mean_clean_flux_continuum_normalized_weight_sum
+ mean_clean_flux_continuum_normalized ./= mean_clean_flux_continuum_normalized_weight_sum
+ mean_clean_var_continuum_normalized ./= mean_clean_flux_continuum_normalized_weight_sum
 
  order_list_timeseries = extract_orders(all_spectra, pipeline_plan,  orders_to_use=orders_to_use, remove_bad_chunks=false, recalc=true )
 
@@ -600,7 +606,6 @@ line_width = line_width_50_default
    @assert all(map(k->k ∈ names(line_list_espresso), ["lambda","weight","order"]))
    dont_need_to!(pipeline_plan,:clean_line_list_tellurics)
  else
-    println("# Can't find ", line_list_filename, ".  Trying ESPRESSO line list.")
     #orders_to_use = good_orders
     #order_list_timeseries = extract_orders(all_spectra,pipeline_plan, orders_to_use=orders_to_use, recalc=true )
     touch(line_list_filename)
@@ -609,6 +614,7 @@ line_width = line_width_50_default
     else
         line_list_input_filename = joinpath(pkgdir(EchelleCCFs),"data","masks","espresso+neid_mask_97_to_108.mas")
     end
+    println("# Recreating line list weights from ", line_list_input_filename)
     line_list_espresso = prepare_line_list(line_list_input_filename, all_spectra, pipeline_plan, v_center_to_avoid_tellurics=ccf_mid_velocity,
        Δv_to_avoid_tellurics = 2*max_bc+range_no_mask_change*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID2D()), orders_to_use=#=orders_to_use=#56:108, recalc=true, verbose=true)
      if args["recompute_line_weights"] && !isnothing(args["line_list_output_filename"])
@@ -651,7 +657,7 @@ if verbose println(now()) end
 println("# Saving results to ", daily_ccf_filename, ".")
   stop_processing_time = now()
   jldopen(daily_ccf_filename, "w") do f
-    f["v_grid"] = v_grid_order_ccfs
+    f["v_grid"] = collect(v_grid_order_ccfs)
     f["order_ccfs"] = order_ccfs
     f["order_ccf_vars"] = order_ccf_vars
     f["Δfwhm"] = Δfwhm 
@@ -690,7 +696,7 @@ for (i,row) in enumerate(eachrow(df_files_use))
     #ccf_filename = joinpath(neid_data_path,target_subdir,"output","ccfs", m[1] * "_ccfs=default.jld2")
     ccf_filename = joinpath(neid_data_path,target_subdir,"ccfs", m[1] * "_ccfs=default.jld2")
     jldopen(ccf_filename, "w") do f
-        f["v_grid"] = v_grid_order_ccfs
+        f["v_grid"] = collect(v_grid_order_ccfs)
         f["order_ccfs"] = order_ccfs[:,:,i]
         f["order_ccf_vars"] = order_ccf_vars[:,:,i]
         f["orders_to_use"] = orders_to_use
@@ -807,7 +813,7 @@ msf = lsf_width/default_ccf_mask_v_width(NEID2D()); fwtf = 0.5  # using LSF widt
    mask_type=:gaussian, Δfwhm=Δfwhm,
    mask_scale_factor=msf, range_no_mask_change=5*line_width_50, ccf_mid_velocity=ccf_mid_velocity, v_step=100, #155,
    v_max=max(5*line_width_50,2*max_bc), allow_nans=true, calc_ccf_var=true, recalc=true)
-  outputs["v_grid"] = v_grid
+  outputs["v_grid"] = collect(v_grid)
   outputs["ccfs_espresso"] = ccfs_espresso
   outputs["ccf_vars_espresso"] = ccf_vars_espresso
 

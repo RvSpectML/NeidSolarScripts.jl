@@ -250,8 +250,9 @@ println("# Found ", length(obs_to_use), " files of ",  size(manifest,1), " to us
                                     :mean_pyroflux=>:pyrflux_mean, :rms_pyroflux=>:pyrflux_rms ) |> DataFrame
    df_out[!,"mask"] = mask
 
-ccf_sum = reshape(sum(order_ccfs,dims=2),num_vels,num_obs)
-ccf_var_sum = reshape(sum(input_data["order_ccf_vars"],dims=2),num_vels,num_obs)
+orders_to_use_for_rvs =  56:78  # TODO: Implement, make parameter, generalize, etc.
+ccf_sum = reshape(sum(view(order_ccfs,:,orders_to_use_for_rvs,:),dims=2),num_vels,num_obs)
+ccf_var_sum = reshape(sum(view(input_data["order_ccf_vars"],:,orders_to_use_for_rvs,:),dims=2),num_vels,num_obs)
 
 println("# Measuring RVs from RvSpectML's CCFs.")
 v_grid = collect(input_data["v_grid"])
@@ -276,12 +277,12 @@ if occursin("template",args["rv_alg"])
       template_obs_to_use = template_data["clean_obs_mask"]
       template_num_obs = sum(template_obs_to_use)
       @assert template_num_obs >= 1
-      template_ccf = reshape(sum(view(template_order_ccfs,:,:,template_obs_to_use),dims=2),num_vels,template_num_obs)
-      template_ccf_var = reshape(sum(view(template_order_ccf_vars,:,:,template_obs_to_use),dims=2),num_vels,template_num_obs)
+      template_ccf = reshape(sum(view(template_order_ccfs,:,orders_to_use_for_rvs,template_obs_to_use),dims=2),num_vels,template_num_obs)
+      template_ccf_var = reshape(sum(view(template_order_ccf_vars,:,orders_to_use_for_rvs,template_obs_to_use),dims=2),num_vels,template_num_obs)
    end
    #ccf_template = EchelleCCFs.calc_ccf_template(view(ccf_sum,:,obs_to_use), view(ccf_var_sum,:,obs_to_use) )
-   ccf_template = EchelleCCFs.calc_ccf_template(template_ccf, template_ccf_var,frac_of_width_to_fit=args["frac_of_width_to_fit"], measure_width_at_frac_depth=args["measure_width_at_frac_depth"])
-   alg_template = MeasureRvFromCCFTemplate(v_grid=collect(v_grid),template=ccf_template)
+   ccf_template = EchelleCCFs.calc_ccf_template(template_ccf, template_ccf_var)
+   alg_template = MeasureRvFromCCFTemplate(v_grid=collect(v_grid),template=ccf_template,frac_of_width_to_fit=args["frac_of_width_to_fit"], measure_width_at_frac_depth=args["measure_width_at_frac_depth"])
    rvs_template = DataFrame(map(i->any(isnan.(view(ccf_sum,:,i))) ? (rv=NaN, σ_rv=NaN) : measure_rv_from_ccf(v_grid,view(ccf_sum,:,i),view(ccf_var_sum,:,i),alg=alg_template),1:num_obs))
    df_out[!,Symbol("rv_template")] = rvs_template.rv
    df_out[!,Symbol("σrv_template")] = rvs_template.σ_rv
@@ -289,7 +290,7 @@ end
 if occursin("gaussian",args["rv_alg"])
    alg_gauss = MeasureRvFromCCFGaussian(frac_of_width_to_fit=args["frac_of_width_to_fit"], measure_width_at_frac_depth=args["measure_width_at_frac_depth"])
    rvs_gauss = DataFrame(map(i->any(isnan.(view(ccf_sum,:,i))) ? (rv=NaN, σ_rv=NaN)  : measure_rv_from_ccf(v_grid,view(ccf_sum,:,i),view(ccf_var_sum,:,i),alg=alg_gauss),1:num_obs))
-   df_out[!,Symbol("rv_template")]= rvs_gauss.rv
+   df_out[!,Symbol("rv_gaussian")]= rvs_gauss.rv
    df_out[!,Symbol("σrv_gaussian")] = rvs_gauss.σ_rv
 end
 if occursin("quadratic",args["rv_alg"])
@@ -315,7 +316,7 @@ for j in 1:num_orders_to_use
    #local ccf_template = EchelleCCFs.calc_ccf_template(view(order_ccfs,:,j,obs_to_use), view(order_ccf_vars,:,j,obs_to_use) )
    local ccf_template = EchelleCCFs.calc_ccf_template(template_ccf, template_ccf_var)
    local alg_template = MeasureRvFromCCFTemplate(v_grid=collect(v_grid),template=ccf_template, frac_of_width_to_fit=args["frac_of_width_to_fit"], measure_width_at_frac_depth=args["measure_width_at_frac_depth"])
-   order_rvs_template = DataFrame(map(i->any(isnan.(view(order_ccfs,:,j,i))) ? (rv=NaN, σ_rv=NaN) : measure_rv_from_ccf(v_grid,view(order_ccfs,:,j,i),view(order_ccf_vars,:,j,i),alg=alg_template),1:num_obs))
+   order_rvs_template = DataFrame(map(i->measure_rv_from_ccf(v_grid,view(order_ccfs,:,j,i),view(order_ccf_vars,:,j,i),alg=alg_template),1:num_obs))
    df_out[!,Symbol("rv_" * string(orders_physical[j]) * "_template")] = order_rvs_template.rv
    df_out[!,Symbol("σrv_" * string(orders_physical[j]) * "_template")] = order_rvs_template.σ_rv
    end
