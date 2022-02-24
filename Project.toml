@@ -51,6 +51,7 @@ SunAsAStar = "1bd1a468-645d-4223-8813-48273918c0e0"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [compat]
+ArgParse = "1"
 CSV = "0.7, 0.8, 0.9.11"
 DataFrames = "0.20, 0.21, 0.22, 0.23, 0.24, 1, 1.1"
 EchelleInstruments = ">=0.2.5"
