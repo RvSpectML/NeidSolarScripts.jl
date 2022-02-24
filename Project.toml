@@ -53,6 +53,7 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 [compat]
 CSV = "0.7, 0.8, 0.9.11"
 DataFrames = "0.20, 0.21, 0.22, 0.23, 0.24, 1, 1.1"
+DataInterpolations = "3"
 EchelleInstruments = ">=0.2.5"
 FileIO = "1.4"
 JLD2 = "0.4"
