@@ -616,7 +616,7 @@ line_width = line_width_50_default
     end
     println("# Recreating line list weights from ", line_list_input_filename)
     line_list_espresso = prepare_line_list(line_list_input_filename, all_spectra, pipeline_plan, v_center_to_avoid_tellurics=ccf_mid_velocity,
-       Δv_to_avoid_tellurics = 2*max_bc+range_no_mask_change*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID2D()), orders_to_use=#=orders_to_use=#56:108, recalc=true, verbose=true)
+       Δv_to_avoid_tellurics = 2*max_bc+range_no_mask_change*line_width_50_default+max_mask_scale_factor*default_ccf_mask_v_width(NEID2D()), orders_to_use=orders_to_use, recalc=true, verbose=true)
      if args["recompute_line_weights"] && !isnothing(args["line_list_output_filename"])
         CSV.write(args["line_list_output_filename"], line_list_espresso)
      end
