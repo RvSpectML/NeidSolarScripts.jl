@@ -154,8 +154,8 @@ begin
 		meta_missing_files = meta_df |> @filter( !(_.l2filename ∈ manifest_df.filename) ) |> DataFrame
 		need_to_redownload_df = copy(meta_missing_files)
 		if checksums
-                        download_success_df = manifest_df |> @join(meta_df, _.filename, _.l2filename, {_.filename, success= _.md5_download == __.l2checksum}) |> DataFrame
-			meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, _.filename, _.l2filename, {_.filename, meta=__}) |> DataFrame).meta
+                        download_success_df = manifest_df |> @join(meta_df, String(_.filename), String(_.l2filename), {_.filename, success= _.md5_download == __.l2checksum}) |> DataFrame
+			meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l2filename), {_.filename, meta=__}) |> DataFrame).meta
                         if size(meta_bad_checksum_df,1) >= 1 
 			   append!(need_to_redownload_df,meta_bad_checksum_df)
                            suspect_files_dir = joinpath(path,suspect_dirname)
