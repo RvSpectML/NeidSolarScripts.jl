@@ -15,7 +15,6 @@ function parse_commandline_make_manifest_solar()
             help = "Path for outputs: manifest.csv"
             arg_type = String
             required = true
-#            default = "output"
          "--subdir"
             help = "Subdirectory with downloaded FITS files."
             arg_type = String
@@ -62,28 +61,17 @@ if verbose && !isdefined(Main,:RvSpectML)  println("# Loading RvSpecML")    end
  using SunAsAStar
  using SunAsAStar.SolarRotation
  using SunAsAStar.DifferentialExtinction
-# using NeidSolarScripts.SolarRotation
-# using NeidSolarScripts.DifferentialExtinction
  if verbose   println("# Loading other packages")    end
  using CSV, DataFrames, Query, Dates
  #using StatsBase, Statistics, Dates
 
 
 fits_target_str = "Sun"
-#=
- if !@isdefined(subdir)
-      subdir = ""
- end
- if !@isdefined(create_missing_continuum_files)
-     create_missing_continuum_files = false
- end
-=#
  paths_to_search_for_param = [pwd(),pkgdir(NeidSolarScripts)]
 
  if verbose println("# Finding what data files are avaliable.")  end
  eval(read_data_paths(paths_to_search=paths_to_search_for_param))
  @assert isdefined(Main,:root_dir)
-# @assert isdefined(Main,:neid_data_path)
  @assert isdefined(Main,:input_dir)
  @assert isdefined(Main,:output_dir)
  @assert isdefined(Main,:subdir)
@@ -116,7 +104,6 @@ if isfile(manifest_filename) || islink(manifest_filename)
     end
     @assert eltype(df_files[!,:order_snrs]) == Vector{Float64}
     =#
-    println("# Required fields present ", size(df_files), ".  No need to regenerate manifest.")
     can_skip_generating_manifest = true
     if any(isnan.(df_files[!,:Δfwhm²]))    ||
        any(isnan.(df_files[!,:Δv_diff_ext]))
@@ -127,11 +114,11 @@ if isfile(manifest_filename) || islink(manifest_filename)
        any(ismissing.(df_files[!,:mean_pyroflux]))
           can_skip_generating_manifest = false
     end
-else
-    println("# Will need to generate manifest at ", manifest_filename, ".")
+end
+if !can_skip_generating_manifest
+   println("# Will need to generate manifest at ", manifest_filename, ".")
 end
 
-#can_skip_generating_manifest = false
 if can_skip_generating_manifest && !create_missing_continuum_files
     exit()
 end
@@ -172,7 +159,6 @@ df_files_calib = df_files |>
 df_files_calib[!,:airmass] = fill(NaN,size(df_files_calib,1))
 CSV.write(manifest_calib_filename, df_files_calib)
 
-
 try
     global df_files_obs = df_files |>
     @filter( _.target == "Sun" ) |>
@@ -187,15 +173,6 @@ catch ex
    exit(0)
 end
 
-
-#=
-df_files_use = df_files_obs |>
-      @filter( _.target == fits_target_str ) |>
-      #@filter(bjd_first_good <= _.bjd < bjd_last_good) |>
-      #@filter( is_good_day(_.Filename) ) |>
-      #@take(max_spectra_to_use) |>
-      DataFrame
-=#
 
 if size(df_files_obs,1) == 0
    touch(manifest_filename)
@@ -233,7 +210,6 @@ if fits_target_str == "Sun" || fits_target_str == "Solar"
        end
     end
     println("# FWHM effect")
-    #df_files_use[!,:Δfwhm²] = CalculateFWHMDifference_SolarRotation_from_obs(df_files_use.bjd,obs=:WIYN)
     df_files_use[!,:Δfwhm²]= calc_Δfwhm_solar_rotation.(df_files_use.bjd,obs=:WIYN)
 
 else

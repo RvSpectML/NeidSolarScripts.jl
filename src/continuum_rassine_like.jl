@@ -551,7 +551,7 @@ end
 
 function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3; λout::AV4 = λ, fwhm::Real = fwhm_sol, ν::Real =1.0,
   smoothing_half_width::Integer = 6, local_maximum_half_width::Integer = smoothing_half_width+1,
-   stretch_factor::Real = 5.0, merging_threshold::Real = 0.25,  min_R_factor::Real = 100.0, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, T4<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}  }
+   stretch_factor::Real = 5.0, merging_threshold::Real = 0.25,  min_R_factor::Real = 100.0, smoothing_half_width_no_anchors::Integer = 1000, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, T4<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}  }
  #clip_width_A = 1.0
  #clip_width_pix = clip_width_A/(λ[2]-λ[1])
  #@assert 1 <= clip_width_pix < Inf
@@ -592,9 +592,10 @@ function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3; λout::AV4 = λ, fwhm
     anchors_merged = anch_orig[anch_mask]
  end
  if length(anchors_merged) < 4
-   println("# Warning only ",  length(anchors_merged), " anchors found, aborting order.")
-   half_width = min_R_factor*(fwhm/speed_of_light_mks)/log(8*log(2))*minimum(λ)/(λ[2]-λ[1])
-   f_alt_continuum = Continuum.smooth(f_obs, half_width=floor(Int64,half_width/2)*2 )
+   println("# Warning only ",  length(anchors_merged), " anchors found, using simpler smoothing.")
+   #half_width = min_R_factor*(fwhm/speed_of_light_mks)/log(8*log(2))*minimum(λ)/(λ[2]-λ[1])
+   #f_alt_continuum = Continuum.smooth(f_obs, half_width=floor(Int64,half_width/2)*2 )
+   f_alt_continuum = Continuum.smooth(f_obs, half_width=smoothing_half_width_no_anchors)
    return (anchors=Int64[], continuum=f_alt_continuum, f_filtered=f_smooth)
  end
   #anchors_merged = anch_orig[anch_mask]
@@ -602,7 +603,7 @@ function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3; λout::AV4 = λ, fwhm
  return (anchors=anchors_merged, continuum=continuum, f_filtered=f_smooth)
 end
 
-function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3, anchors::AV5; λout::AV4 = λ, smoothing_half_width::Integer = 6, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, T4<:Real, T5<:Integer, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}, AV5<:AbstractVector{T5}  }
+function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3, anchors::AV5; λout::AV4 = λ, smoothing_half_width::Integer = 6, smoothing_half_width_no_anchors::Integer = 1000, verbose::Bool = false ) where { T1<:Real, T2<:Real, T3<:Real, T4<:Real, T5<:Integer, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}, AV5<:AbstractVector{T5}  }
  #clip_width_A = 1.0
  #clip_width_pix = clip_width_A/(λ[2]-λ[1])
  #@assert 1 <= clip_width_pix < Inf
@@ -613,7 +614,11 @@ function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3, anchors::AV5; λout::
     smoothing_half_width = min(100, ceil(Int64,6*(30/mean_snr_per_pix)^2))
  end
  f_smooth = Continuum.smooth(f_obs, half_width=smoothing_half_width)
- continuum = calc_continuum_from_anchors_hybrid(λ,f_smooth,anchors, λout=λout) # , verbose=verbose)
+ if length(anchors) < 4
+    continuum = Continuum.smooth(f_obs, half_width=smoothing_half_width_no_anchors)
+ else
+    continuum = calc_continuum_from_anchors_hybrid(λ,f_smooth,anchors, λout=λout) # , verbose=verbose)
+ end
  return (anchors=anchors, continuum=continuum, f_filtered=f_smooth)
 end
 
@@ -643,7 +648,7 @@ function (gpr::GetPixelRangeFromInstrument{InstT})(ord_idx::Integer) where {  In
 end
 
 function calc_continuum(λ::AA1, f_obs::AA2, var_obs::AA3; λout::AA4 = λ, fwhm::Real = fwhm_sol, ν::Real =1.0,
-  stretch_factor::Real = 5.0, merging_threshold::Real = 0.25, smoothing_half_width::Integer = 6, min_R_factor::Real = 100.0,
+  stretch_factor::Real = 5.0, merging_threshold::Real = 0.25, smoothing_half_width::Integer = 6, min_R_factor::Real = 100.0, smoothing_half_width_no_anchors::Integer = 1000, 
         orders_to_use::AbstractVector{<:Integer} = 1:size(λ,2), get_pixel_range::GPRT = GetPixelRangeFromWavelengthGrid(λ), verbose::Bool = false ) where {
         T1<:Real, T2<:Real, T3<:Real, T4<:Real, AA1<:AbstractArray{T1,2}, AA2<:AbstractArray{T2,2}, AA3<:AbstractArray{T3,2} , AA4<:AbstractArray{T4,2}, GPRT<:AbstractGetPixelRangeFunctor }
   @assert size(λ) == size(f_obs) == size(var_obs)
@@ -665,7 +670,7 @@ function calc_continuum(λ::AA1, f_obs::AA2, var_obs::AA3; λout::AA4 = λ, fwhm
     if all(isnan.(λ_use)) || all(isnan.(f_obs_use)) || all(isnan.(var_obs_use))   continue   end
     λout_use = view(λout,pix,ord_idx)
     (anchors_1d, continuum_order_1d, f_filtered_1d) = Continuum.calc_continuum(λ_use,f_obs_use,var_obs_use, λout=λout_use,
-         stretch_factor=stretch_factor, merging_threshold=merging_threshold, smoothing_half_width=smoothing_half_width, min_R_factor=min_R_factor, verbose=verbose)
+         stretch_factor=stretch_factor, merging_threshold=merging_threshold, smoothing_half_width=smoothing_half_width, min_R_factor=min_R_factor, smoothing_half_width_no_anchors=smoothing_half_width_no_anchors, verbose=verbose)
     anchors_2d[ord_idx] = anchors_1d
     continuum_2d[pix,ord_idx] .= continuum_order_1d
     f_filtered_2d[pix,ord_idx] .= f_filtered_1d
@@ -677,6 +682,7 @@ function calc_continuum(λ::AA1, f_obs::AA2, var_obs::AA3, anchors::AVV; λout::
    smoothing_half_width::Integer = 6,
    #fwhm::Real = fwhm_sol, ν::Real =1.0,
   #stretch_factor::Real = 5.0, merging_threshold::Real = 0.25, min_R_factor::Real = 100.0,
+        smoothing_half_width_no_anchors::Integer = 1000,
         orders_to_use::AbstractVector{<:Integer} = 1:size(λ,2), get_pixel_range::GPRT = GetPixelRangeFromWavelengthGrid(λ), verbose::Bool = false ) where {
         T1<:Real, T2<:Real, T3<:Real, T4<:Real, T5<:Integer, AA1<:AbstractArray{T1,2}, AA2<:AbstractArray{T2,2}, AA3<:AbstractArray{T3,2} , AA4<:AbstractArray{T4,2}, AVV<:AbstractVector{Vector{T5}}, GPRT<:AbstractGetPixelRangeFunctor }
   @assert size(λ) == size(f_obs) == size(var_obs)
@@ -700,7 +706,7 @@ function calc_continuum(λ::AA1, f_obs::AA2, var_obs::AA3, anchors::AVV; λout::
     if all(isnan.(λ_use)) || all(isnan.(f_obs_use)) || all(isnan.(var_obs_use))   continue   end
 
     (anchors_1d, continuum_order_1d, f_filtered_1d) = Continuum.calc_continuum(λ_use,f_obs_use,var_obs_use,
-          anchors[ord_idx], λout=λout_use, verbose=verbose)
+          anchors[ord_idx], λout=λout_use, smoothing_half_width_no_anchors=smoothing_half_width_no_anchors, verbose=verbose)
     #anchors_2d[ord_idx] = anchors_1d
     continuum_2d[pix,ord_idx] .= continuum_order_1d
     f_filtered_2d[pix,ord_idx] .= f_filtered_1d
