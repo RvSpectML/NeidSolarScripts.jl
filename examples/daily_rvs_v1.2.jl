@@ -251,6 +251,9 @@ println("# Found ", length(obs_to_use), " files of ",  size(manifest,1), " to us
    df_out[!,"mask"] = mask
 
 orders_to_use_for_rvs =  56:78  # TODO: Implement, make parameter, generalize, etc.
+orders_to_use_for_rvs = map(i->findfirst(x->x==i,input_data["orders_to_use"]), orders_to_use_for_rvs)
+orders_to_use_for_rvs = filter(x->!isnothing(x), orders_to_use_for_rvs )
+
 ccf_sum = reshape(sum(view(order_ccfs,:,orders_to_use_for_rvs,:),dims=2),num_vels,num_obs)
 ccf_var_sum = reshape(sum(view(input_data["order_ccf_vars"],:,orders_to_use_for_rvs,:),dims=2),num_vels,num_obs)
 
