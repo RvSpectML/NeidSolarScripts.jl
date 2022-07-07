@@ -5,6 +5,7 @@ Pkg.add(["HTTP","EzXML"])
 using Downloads
 using HTTP, EzXML
 pyrhelio_dir = "/gpfs/group/ebf11/default/pipeline/data/neid_solar/pyrheliometer"
+pyrhelio_dir = "/storage/group/ebf11/default/pipeline/neid_solar/data/pyrheliometer"
 url = "https://neid.ipac.caltech.edu/pyrheliometer.php"
 
 try
