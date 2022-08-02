@@ -11,6 +11,10 @@ using ArgParse
             help = "Directory with downloaded FITS files."
             arg_type = String
             required = true
+         "--object"
+            help = "Filter for object name matching (default: empty, so no checking)"
+            arg_type = String
+            default = ""
 #=
          "--root"
              help = "Path to root of data directories"
@@ -102,29 +106,32 @@ begin
                 end
 		
                 meta = CSV.read(meta_filename,DataFrame)
-	        #if args["target"] == "Sun"  # TODO: Eventually need to generalize for non-solar observations
-                   meta = meta |> @filter( occursin(r"^Sun$",_.object) ) |> DataFrame
-                #end
-                m = match(r"(v\d+\.\d+)\.\d+\/", input_path)
-                if m != nothing
-                   drp_latest_minor = Base.thisminor(VersionNumber(m[1]))
-                else
-                   drp_latest_minor = Base.thisminor(maximum(VersionNumber.(meta.swversion)))
+		#if args["target"] == "Sun"  # TODO: Eventually need to generalize for non-solar observations
+	        if length(args["object"])>0 
+                   meta = meta |> @filter( occursin(args["object"],_.object) ) |> DataFrame
                 end
-                if !args["quiet"] 
-                   println("# Checking minor version matches: ", drp_latest_minor)
-                end
-                if ! all(Base.thisminor.(VersionNumber.(meta.swversion)) .== drp_latest_minor) 
-                   msg = "meta.csv contains multiple DRP versions: " * string(unique(meta.swversion))
-                   @warn(msg)
-                   #touch(mixed_versions_filename)
-                   open(mixed_versions_filename, "w") do io
-                       write(io, msg)
-                   end;
-                   # TODO: Should we automatically download new metadata here?
-                   # Hard since we won't know all the right query flags (perhaps save them to the directory?)
-                   # For now let a script find this file and trigger a reprocess
-                end
+                if in("swversion" , names(meta) )
+		   m = match(r"(v\d+\.\d+)\.\d+\/", input_path)
+                   if m != nothing
+                      drp_latest_minor = Base.thisminor(VersionNumber(m[1]))
+                   else
+                      drp_latest_minor = Base.thisminor(maximum(VersionNumber.(meta.swversion)))
+                   end
+                   if !args["quiet"] 
+                      println("# Checking minor version matches: ", drp_latest_minor)
+                   end
+                   if ! all(Base.thisminor.(VersionNumber.(meta.swversion)) .== drp_latest_minor) 
+                      msg = "meta.csv contains multiple DRP versions: " * string(unique(meta.swversion))
+                      @warn(msg)
+                      #touch(mixed_versions_filename)
+                      open(mixed_versions_filename, "w") do io
+                          write(io, msg)
+                      end;
+                      # TODO: Should we automatically download new metadata here?
+                      # Hard since we won't know all the right query flags (perhaps save them to the directory?)
+                      # For now let a script find this file and trigger a reprocess
+                   end
+		end
                 manifest.filename = basename.(manifest.Filename)
 		need_to_redownload_df = make_meta_redownload(meta,manifest, input_path, checksums=checksums,max_files=max_files)
 		
@@ -151,11 +158,25 @@ begin
                    @warn("Empty dataframe meta: " * string(size(meta_df,1)) * ", manifest: " * string(size(manifest_df,1)) )
                    return DataFrame()
                 end 
-		meta_missing_files = meta_df |> @filter( !(_.l2filename ∈ manifest_df.filename) ) |> DataFrame
+		if in("l2filename",names(meta_df))
+		   meta_missing_files = meta_df |> @filter( !(_.l2filename ∈ basename.(manifest_df.filename)) ) |> DataFrame
+		elseif in("l1filename",names(meta_df))
+		   meta_missing_files = meta_df |> @filter( !(_.l1filename ∈ basename.(manifest_df.filename)) ) |> DataFrame
+		else
+		   meta_missing_files = meta_df |> @filter( !(_.l0filename ∈ basename.(manifest_df.filename)) ) |> DataFrame
+		end
 		need_to_redownload_df = copy(meta_missing_files)
 		if checksums
+		     if in("l2filename",names(meta_df))
                         download_success_df = manifest_df |> @join(meta_df, String(_.filename), String(_.l2filename), {_.filename, success= _.md5_download == __.l2checksum}) |> DataFrame
 			meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l2filename), {_.filename, meta=__}) |> DataFrame).meta
+		     elseif in("l1filename",names(meta_df))
+                        download_success_df = manifest_df |> @join(meta_df, String(_.filename), String(_.l1filename), {_.filename, success= _.md5_download == __.l1checksum}) |> DataFrame
+			meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l1filename), {_.filename, meta=__}) |> DataFrame).meta
+		     else
+                        download_success_df = manifest_df |> @join(meta_df, String(_.filename), String(_.l0filename), {_.filename, success= _.md5_download == __.l0checksum}) |> DataFrame
+			meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l0filename), {_.filename, meta=__}) |> DataFrame).meta
+		     end
                         if size(meta_bad_checksum_df,1) >= 1 
 			   append!(need_to_redownload_df,meta_bad_checksum_df)
                            suspect_files_dir = joinpath(path,suspect_dirname)
@@ -166,15 +187,24 @@ begin
                         end 
                  end
                  begin 
-                        drp_latest_minor = Base.thisminor(maximum(VersionNumber.(meta_df.swversion)))
-                        meta_old_drp_df = meta_df |> @filter( Base.thisminor(VersionNumber(_.swversion)) < drp_latest_minor ) |> DataFrame
+                        meta_old_drp_df = DataFrame()
+                        if in("swversion",names(meta_df))
+			   drp_latest_minor = Base.thisminor(maximum(VersionNumber.(meta_df.swversion)))
+                           meta_old_drp_df = meta_df |> @filter( Base.thisminor(VersionNumber(_.swversion)) < drp_latest_minor ) |> DataFrame
+			end
                         if size(meta_old_drp_df,1) >= 1 
 			   append!(need_to_redownload_df,meta_old_drp_df)
                            suspect_files_dir = joinpath(path,suspect_dirname)
                            isdir(suspect_files_dir) || mkdir(suspect_files_dir)
-                           for file in meta_old_drp_df.filename
-                               mv(file, joinpath(suspect_files_dir,file), force=true)
-                           end    
+                           if in("swversion",names(meta_df))
+                               for file in meta_old_drp_df.filename
+                                   mv(file, joinpath(suspect_files_dir,file), force=true)
+                               end    
+			   else
+                               for file in meta_old_drp_df.l0filename
+                                   mv(joinpath(path,file), joinpath(suspect_files_dir,file), force=true)
+                               end    
+			   end
                         end
 		end
 		need_to_redownload_df
