@@ -135,7 +135,8 @@ end
 =#
 
 try
-   global df_files = NEID.make_manifest(input_path) #joinpath(root_path,input_dir, subdir))
+  mkpath(output_path)
+  global df_files = NEID.make_manifest(input_path) #joinpath(root_path,input_dir, subdir))
 
 catch ex
    println("# Error making manifest for ", subdir,".")
