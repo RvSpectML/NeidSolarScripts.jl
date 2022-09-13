@@ -16,7 +16,7 @@ println("# Parsing arguments...")
      add_arg_group!(s, "Files", :argg_files)
      @add_arg_table! s begin
          "manifest"
-             help = "Manifest file (CVS) containing FITS files to analyze.\nExpects columns named Filename, bjd, target, and continuum_filename."
+             help = "Manifest file (CVS) containing FITS files to analyze.\nExpects columns named Filename, bjd, target, and used for continuum continuum_filename."
              arg_type = String
              default = "manifest.csv"
              #required = true
@@ -431,7 +431,7 @@ if @isdefined(sed_filename)
    sed = Continuum.read_master_sed_neid(filename=sed_filename)
 end
 min_order_for_continuum = min_order(NEID2D()) # 12
-max_order_for_continuum = max_order(NEID2D())
+max_order_for_continuum = max_order(NEID2D())-1  # Current DRP returns useless last order
 orders_to_use_for_continuum = min_order_for_continuum:max_order_for_continuum
 
 pipeline_plan = PipelinePlan()
@@ -489,7 +489,8 @@ pipeline_plan = PipelinePlan()
     if @isdefined sed
       @warn("DRP v1.1 now provides blaze in L2 file.  This script has not been updated to use explicit an SED model.") 
       (f_norm, var_norm) = Continuum.normalize_by_sed(spec.λ,spec.flux,spec.var, sed; poly_order = args["order_poly_continuum"], half_width = args["continuum_poly_half_width"], quantile = args["quantile_fit_continuum"], orders_to_use=orders_to_use_for_continuum)
-      if row.Filename ∈ df_files_cleanest.Filename
+      sed_norm_failed = any([all(isnan.(view(f_norm,:,ord))) for ord in 1:(size(f_norm,2)-1)]) #check if any orders besides the last order are all nans
+      if row.Filename ∈ df_files_cleanest.Filename && !sed_norm_failed
             mean_clean_flux_sed_normalized .+= f_norm # .*weight
             mean_clean_var_sed_normalized .+= var_norm # .*weight
             global mean_clean_flux_sed_normalized_weight_sum +=  weight
@@ -512,7 +513,7 @@ pipeline_plan = PipelinePlan()
         else
             (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, f_norm, var_norm; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
                 stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
-                orders_to_use = orders_to_use_for_continuum, verbose = false )
+                orders_to_use = orders_to_use_for_continuum, verbose = true )
             push!(normalization_anchors_list, anchors)
         end
             #=
@@ -520,9 +521,14 @@ pipeline_plan = PipelinePlan()
             #file_hashes[row.continuum_filename] = bytes2hex(sha256(row.continuum_filename))
             file_hashes[row.continuum_filename] = bytes2hex(open(md5,row.continuum_filename))
             =#
-        f_norm ./= continuum
-        var_norm ./= continuum.^2
-        continuum_norm_failed = any([all(isnan.(all_spectra[i].flux[:,i])) for i in 1:size(all_spectra[i].flux,2)][1:end-1]) #check if any orders besides the last order are all nans
+        #f_norm ./= continuum
+        #var_norm ./= continuum.^2
+        for ord in orders_to_use_for_continuum
+	    f_norm[:,ord] ./= view(continuum,:,ord)
+            var_norm[:,ord] ./= view(continuum,:,ord).^2
+	end
+        #continuum_norm_failed = any([all(isnan.(all_spectra[i].flux[:,i])) for i in 1:size(all_spectra[i].flux,2)][1:end-1]) #check if any orders besides the last order are all nans
+        continuum_norm_failed = any([all(isnan.(view(f_norm,:,ord))) for ord in orders_to_use_for_continuum]) #check if any orders used for continuum are all nans
         if row.Filename ∈ df_files_cleanest.Filename && !continuum_norm_failed
                 mean_clean_flux_continuum_normalized .+= f_norm # .*weight
                 mean_clean_var_continuum_normalized .+= var_norm # .*weight
@@ -563,7 +569,7 @@ pipeline_plan = PipelinePlan()
         else
             (anchors, continuum, f_filtered) = Continuum.calc_continuum(spec.λ, mean_clean_flux, mean_clean_var; fwhm = args["fwhm_continuum"]*1000, ν = args["nu_continuum"],
                 stretch_factor = args["stretch_factor"], merging_threshold = args["merging_threshold"], smoothing_half_width = args["smoothing_half_width"], min_R_factor = args["min_rollingpin_r"],
-                orders_to_use = orders_to_use_for_continuum, verbose = false )
+                orders_to_use = orders_to_use_for_continuum, verbose = true )
             if !isnothing(args["anchors_filename_output"])
                 println("# Storing anchors used for continuum model in ",args["anchors_filename_output"],  ".")
                 save(args["anchors_filename_output"], Dict("anchors" => anchors) )
@@ -576,9 +582,11 @@ pipeline_plan = PipelinePlan()
     for (i,row) in enumerate(eachrow(df_files_use))
         (anchors, continuum, f_filtered) = Continuum.calc_continuum(all_spectra[i].λ, all_spectra[i].flux, all_spectra[i].var,
                     anchors, smoothing_half_width = args["smoothing_half_width"], orders_to_use=orders_to_use_for_continuum)
-        all_spectra[i].flux ./= continuum
-        all_spectra[i].var ./= continuum.^2
-        continuum_norm_failed = any([all(isnan.(all_spectra[i].flux[:,i])) for i in 1:size(all_spectra[i].flux,2)][1:end-1]) #check if any orders besides the last order are all nans
+        for ord in orders_to_use_for_continuum
+	    all_spectra[i].flux[:,ord] ./= view(continuum,:,ord)
+            all_spectra[i].var[:,ord] ./= view(continuum,:,ord).^2
+	end
+        continuum_norm_failed = any([all(isnan.(view(all_spectra[i].flux,:,ord))) for ord in orders_to_use_for_continuum]) #check if any orders used for continuum are all nans
         if row.Filename ∈ df_files_cleanest.Filename && !continuum_norm_failed
             mean_clean_flux_continuum_normalized .+= all_spectra[i].flux # .*weight
             mean_clean_var_continuum_normalized .+= all_spectra[i].var # .*weight
@@ -628,9 +636,13 @@ line_width = line_width_50_default
  #outputs["line_list_espresso"] = line_list_espresso
 
 if args["variable_mask_scale"]
-     maxΔfwhm² = -0.569375
-     @assert maximum(df_files_use.Δfwhm²) < maxΔfwhm²
-     Δfwhm = 1000.0 .* sqrt.(maxΔfwhm².-df_files_use.Δfwhm²[1:length(all_spectra)])  # How much to increase fwhm by to acheive uniform fwhm
+     #maxΔfwhm² = -0.569375
+     maxΔfwhm² = -0.56930
+     @assert maximum(df_files_use.Δfwhm²) <= maxΔfwhm²
+     if maximum(df_files_use.Δfwhm²) > maxΔfwhm²
+        println("# Warning: dangerously large maximum(df_files_use.Δfwhm²) = ", maximum(df_files_use.Δfwhm²a) )
+     end
+     Δfwhm = 1000.0 .* sqrt.(clamp.(maxΔfwhm².-df_files_use.Δfwhm²[1:length(all_spectra)], 0., Inf))  # How much to increase fwhm by to acheive uniform fwhm
 else
     Δfwhm = zeros(0)
 end
