@@ -522,7 +522,8 @@ pipeline_plan = PipelinePlan()
             =#
         f_norm ./= continuum
         var_norm ./= continuum.^2
-        if row.Filename ∈ df_files_cleanest.Filename
+        continuum_norm_failed = any([all(isnan.(all_spectra[i].flux[:,i])) for i in 1:size(all_spectra[i].flux,2)][1:end-1]) #check if any orders besides the last order are all nans
+        if row.Filename ∈ df_files_cleanest.Filename && !continuum_norm_failed
                 mean_clean_flux_continuum_normalized .+= f_norm # .*weight
                 mean_clean_var_continuum_normalized .+= var_norm # .*weight
                 global mean_clean_flux_continuum_normalized_weight_sum += weight
@@ -577,7 +578,8 @@ pipeline_plan = PipelinePlan()
                     anchors, smoothing_half_width = args["smoothing_half_width"], orders_to_use=orders_to_use_for_continuum)
         all_spectra[i].flux ./= continuum
         all_spectra[i].var ./= continuum.^2
-        if row.Filename ∈ df_files_cleanest.Filename
+        continuum_norm_failed = any([all(isnan.(all_spectra[i].flux[:,i])) for i in 1:size(all_spectra[i].flux,2)][1:end-1]) #check if any orders besides the last order are all nans
+        if row.Filename ∈ df_files_cleanest.Filename && !continuum_norm_failed
             mean_clean_flux_continuum_normalized .+= all_spectra[i].flux # .*weight
             mean_clean_var_continuum_normalized .+= all_spectra[i].var # .*weight
             global mean_clean_flux_continuum_normalized_weight_sum += weight
