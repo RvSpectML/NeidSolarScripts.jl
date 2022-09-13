@@ -58,10 +58,11 @@ end
 
 function calc_mean_snr( flux::AV1, var::AV2 ) where { T1<:Real, T2<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2} }
    idx_bad = isnan.(flux) .| isnan.(var) .| (var .<=0.0) 
-   return mean(flux[.!idx_bad]./sqrt.(var[.!idx_bad]))
+   return mean(view(flux,.!idx_bad)./sqrt.(view(var,.!idx_bad)))
+   #return mean(flux[.!idx_bad]./sqrt.(var[.!idx_bad]))
 end
 
-function smooth(f::AV2; half_width::Integer = 6 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
+function smooth_no_nans(f::AV2; half_width::Integer = 6 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
   #println("# size(f) to smooth: ", size(f))
   w=DSP.hanning(1+2*half_width)
   if 1+2*half_width<3
@@ -70,6 +71,35 @@ function smooth(f::AV2; half_width::Integer = 6 ) where {  T2<:Real, AV2<:Abstra
     return f
   else
     return y_smooth = conv(f, w/sum(w))[1+half_width:end-half_width]
+  end
+end
+
+function smooth_over_nans(f::AV2; half_width::Integer = 6 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
+  output = zeros(eltype(f),size(f))
+  weights = zeros(eltype(f),1+2*half_width)
+  one_over_half_width = one(eltype(f))/half_width
+  for (k,j) in enumerate(-half_width:half_width)
+      twox = j*one_over_half_width
+      weights[k] = 0.5*(1+cos(pi*twox))
+  end
+  for i in 1:length(f)
+      sum  = zero(eltype(f))
+      norm = zero(eltype(f))
+      for (k,j) in enumerate(max(1,i-half_width):min(i+half_width,length(f)))
+          if isnan(f[j]) continue end
+          sum += f[j]* weights[k]
+          norm += weights[k]
+      end
+      output[i] = norm>0 ? sum/norm : NaN
+  end
+  return output
+end
+       
+function smooth(f::AV2; half_width::Integer = 6 ) where {  T2<:Real, AV2<:AbstractVector{T2} }
+  if (half_width >=256) && (sum(isnan.(f)) == 0)  # just a guess where FFT based smoothing might be faster
+     smooth_no_nans(f,half_width=half_width)
+  else
+     smooth_over_nans(f,half_width=half_width)
   end
 end
 
@@ -298,6 +328,9 @@ function calc_continuum_anchors(λ::AV1, f::AV2; radius::AV3,
   if verbose println("# passed radius = ", extrema(radius)) end
   #radius = min_radius .* λ./min_λ
   keep = Vector{Int64}()
+  if any(isnan.(extrema(radius)))
+     return keep
+  end
   sizehint!(keep,max(32,min(256,2^floor(Int64,log2(length(λ))-2))))
   push!(keep,1)
   j = 1
@@ -368,7 +401,12 @@ end
 function calc_continuum_from_anchors( λ::AV1, f::AV2, anchors::AV3; λout::AV4 = λ,
               verbose::Bool = false ) where {
                 T1<:Real, T2<:Real, T3<:Integer, T4<:Real, AV1<:AbstractVector{T1}, AV2<:AbstractVector{T2}, AV3<:AbstractVector{T3}, AV4<:AbstractVector{T4}  }
-  calc_continuum_from_anchors_hybrid( λ, f, anchors, λout=λout,verbose=verbose)
+
+	anchors_mask = (.!isnan.(λ[anchors])) .& (.!isnan.(f[anchors]))
+	if sum(anchors_mask) < length(anchors)
+	   @warn "NaN found at anchor location" num_anchors_removed=length(anchors)-sum(anchors_mask)
+	end
+	calc_continuum_from_anchors_hybrid( λ, f, view(anchors,anchors_mask), λout=λout,verbose=verbose)
 end
 
 function calc_continuum_from_anchors_linear( λ::AV1, f::AV2, anchors::AV3; λout::AV4 = λ,
