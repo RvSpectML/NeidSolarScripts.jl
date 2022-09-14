@@ -19,11 +19,11 @@ using ArgParse
          "--root"
              help = "Path to root of data directories"
              arg_type = String
-             default = "/gpfs/group/ebf11/default/RISE_NEID_ebf/data"
+             default = "/storage/group/ebf11/default/pipeline/neid_solar/data"
          "--input"
              help = "Path to inputs FITS files (fits)"
              arg_type = String
-             default = "solar_L2/v1.1"
+             default = "v1.1/L2/"
          "--output"
              help = "Path to daily CCFs (jld2)"
              arg_type = String
@@ -169,20 +169,24 @@ begin
 		if checksums
 		     if in("l2filename",names(meta_df))
                         download_success_df = manifest_df |> @join(meta_df, String(_.filename), String(_.l2filename), {_.filename, success= _.md5_download == __.l2checksum}) |> DataFrame
-			meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l2filename), {_.filename, meta=__}) |> DataFrame).meta
+			#meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l2filename), {_.filename, meta=__}) |> DataFrame).meta
+			meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l2filename), {_.filename, meta=__}) |> DataFrame)
 		     elseif in("l1filename",names(meta_df))
                         download_success_df = manifest_df |> @join(meta_df, String(_.filename), String(_.l1filename), {_.filename, success= _.md5_download == __.l1checksum}) |> DataFrame
-			meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l1filename), {_.filename, meta=__}) |> DataFrame).meta
+			#meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l1filename), {_.filename, meta=__}) |> DataFrame).meta
+			meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l1filename), {_.filename, meta=__}) |> DataFrame)
 		     else
                         download_success_df = manifest_df |> @join(meta_df, String(_.filename), String(_.l0filename), {_.filename, success= _.md5_download == __.l0checksum}) |> DataFrame
-			meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l0filename), {_.filename, meta=__}) |> DataFrame).meta
+			#meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l0filename), {_.filename, meta=__}) |> DataFrame).meta
+			meta_bad_checksum_df = DataFrame(download_success_df |> @filter(!_.success) |> @join(meta_df, String(_.filename), String(_.l0filename), {_.filename, meta=__}) |> DataFrame)
 		     end
-                        if size(meta_bad_checksum_df,1) >= 1 
-			   append!(need_to_redownload_df,meta_bad_checksum_df)
+                        if size(meta_bad_checksum_df.meta,1) >= 1 
+			   #append!(need_to_redownload_df,meta_bad_checksum_df)
+			   append!(need_to_redownload_df,meta_bad_checksum_df.meta)
                            suspect_files_dir = joinpath(path,suspect_dirname)
                            isdir(suspect_files_dir) || mkdir(suspect_files_dir)
                            for file in meta_bad_checksum_df.filename
-                               mv(file, joinpath(suspect_files_dir,file), force=true)
+                               mv(joinpath(path,file), joinpath(suspect_files_dir,file), force=true)
                            end    
                         end 
                  end
@@ -222,6 +226,7 @@ if !args["crawl"]
 
    if !args["quiet"] 
       println("# verify_downloads.jl $input_path identified ", size(need_to_redownload_df,1), " files to download.")
+      println(need_to_redownload_df)
    end
 
 else
