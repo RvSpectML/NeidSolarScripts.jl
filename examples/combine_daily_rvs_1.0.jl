@@ -62,7 +62,11 @@ files1 = glob([r"\d{2}",args["input_filename"]],args["input_path"])
 files2 = glob([r"\d{2}",r"\d{2}",args["input_filename"]],args["input_path"])
 files3 = glob([r"\d{4}",r"\d{2}",r"\d{2}",args["input_filename"]],args["input_path"])
 files = vcat(files1,files2,files3)
-@assert length(files) >= 1
+#@assert length(files) >= 1
+if !(length(files) >= 1)
+   @warn "No files found."
+   exit()
+end
 
 if !isnothing(args["exclude_filename"]) && isfile(args["exclude_filename"]) && (filesize(args["exclude_filename"])>0)
    @info "# Reading days to exclude."
