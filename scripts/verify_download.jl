@@ -186,7 +186,9 @@ begin
                            suspect_files_dir = joinpath(path,suspect_dirname)
                            isdir(suspect_files_dir) || mkdir(suspect_files_dir)
                            for file in meta_bad_checksum_df.filename
-                               mv(joinpath(path,file), joinpath(suspect_files_dir,file), force=true)
+                               if isfile(joinpath(path,file))
+                                  mv(joinpath(path,file), joinpath(suspect_files_dir,file), force=true)
+			       end
                            end    
                         end 
                  end
@@ -226,7 +228,9 @@ if !args["crawl"]
 
    if !args["quiet"] 
       println("# verify_downloads.jl $input_path identified ", size(need_to_redownload_df,1), " files to download.")
-      println(need_to_redownload_df)
+      if size(need_to_redownload_df,1) >= 1
+         println(need_to_redownload_df) 
+      end
    end
 
 else
