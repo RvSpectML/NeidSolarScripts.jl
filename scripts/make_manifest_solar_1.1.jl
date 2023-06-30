@@ -135,7 +135,7 @@ end
 =#
 
 try
-  mkpath(output_path)
+  mkpath(input_path)
   global df_files = NEID.make_manifest(input_path) #joinpath(root_path,input_dir, subdir))
 
 catch ex
@@ -159,6 +159,23 @@ df_files_calib = df_files |>
 
 df_files_calib[!,:airmass] = fill(NaN,size(df_files_calib,1))
 CSV.write(manifest_calib_filename, df_files_calib)
+
+# Remove any files without exposure meter data
+#expmeter_cols = [:expmeter_mean, :expmeter_mean_blue, :expmeter_mean_green, :expmeter_mean_red, :expmeter_mean_winsor, :expmeter_rms, :expmeter_rms_blue, :expmeter_rms_green, :expmeter_rms_red, :expmeter_rms_winsor ]
+expmeter_mask = .!ismissing.(df_files.expmeter_mean)
+df_files = df_files[expmeter_mask,:]
+
+# Deal with case of no telluric data
+df_files.telluric_zenith[isnothing.(df_files.telluric_zenith)] .= missing
+df_files.telluric_wvapor[isnothing.(df_files.telluric_wvapor)] .= missing
+if eltype(df_files.telluric_wvapor) == Union{Missing, Nothing}  df_files.telluric_wvapor = fill(missing,size(df_files,1)) end
+if eltype(df_files.telluric_wvapor) == Union{Missing, Nothing, Float64}
+   df_files.telluric_wvapor = convert.(Union{Missing, Float64}, df_files.telluric_wvapor)
+end
+if eltype(df_files.telluric_zenith) == Union{Missing, Nothing}  df_files.telluric_zenith = fill(missing,size(df_files,1)) end
+if eltype(df_files.telluric_zenith) == Union{Missing, Nothing, Float64}
+   df_files.telluric_zenith = convert.(Union{Missing, Float64}, df_files.telluric_zenith)
+end
 
 try
     global df_files_obs = df_files |>
