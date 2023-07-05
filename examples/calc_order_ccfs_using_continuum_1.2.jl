@@ -6,11 +6,12 @@ verbose = false
  if verbose println("# Loading NeidSolarScripts")    end
  using SunAsAStar
  using NeidSolarScripts
- using ArgParse
+ #using ArgParse
 
 println("# Parsing arguments...")
    lsf_width = 3.0e3
-   function parse_commandline()
+#=
+function parse_commandline()
      s = ArgParseSettings( description = "Calculate order CCFs from NEID L2 FITS files.")
      #import_settings!(s, s_files_only, args_only=false)
      add_arg_group!(s, "Files", :argg_files)
@@ -165,6 +166,46 @@ println("# Parsing arguments...")
             help = "Maximum airmass for clean spectrum."
             arg_type = Float64
             default = 2.0
+         "--min_expmeter"
+            help = "Minimum mean exposure meter flux."
+            arg_type = Float64
+            default = 6e4
+         "--min_expmeter_clean"
+            help = "Minimum mean exposure meter flux for clean spectrum."
+            arg_type = Float64
+            default = 1e5
+         "--min_pyrhelio"
+            help = "Minimum mean pyrheliometer flux."
+            arg_type = Float64
+            default = 10^2.95
+         "--min_pyrhelio_clean"
+            help = "Minimum mean pyrheliometer flux for clean spectrum."
+            arg_type = Float64
+            default = 10^2.95
+         "--max_expmeter_rms_frac"
+            help = "Maximum fractional RMS exposure meter flux."
+            arg_type = Float64
+            default = 0.003
+         "--max_expmeter_rms_frac_clean"
+            help = "Maximum fractional RMS exposure meter flux for clean spectrum."
+            arg_type = Float64
+            default = 0.003
+         "--max_pyrhelio_rms_frac"
+            help = "Maximum fractional RMS pyrheliometer flux."
+            arg_type = Float64
+            default = 0.0035
+         "--max_pyrhelio_rms_frac_clean"
+            help = "Maximum fractional RMS pyrheliometer flux for clean spectrum."
+            arg_type = Float64
+            default = 0.0035
+         "--min_expmeter_to_pyrhelio"
+            help = "Minimum mean exposure meter flux relative to pyrheliometer flux."
+            arg_type = Float64
+            default = 0.0
+        "--min_expmeter_to_pyrhelio_clean"
+            help = "Minimum mean exposure meter flux relative to pyrheliometer flux for clean spectrum."
+            arg_type = Float64
+            default = 0.0 # 150 from DRP v1.1
 #=
          "--min_snr_factor"
             help = "Minimum SNR relative to max_snr."
@@ -190,6 +231,16 @@ println("# Parsing arguments...")
            #default = [ min_order(NEID2D()), max_order(NEID2D()) ]
            #default = [22, 30]
            default = [23, 59]
+         "--start_time_clean"
+            help = "Specify daily start time for CCFs for clean spectrum"
+            nargs = 2
+            arg_type = Int64
+            default = [17, 30]
+        "--stop_time_clean"
+           help = "Specify daily stop time for CCFs for clean spectrum"
+           nargs = 2
+           arg_type = Int64
+           default = [22, 12]
          "--max_num_spectra"
             help = "Maximum number of spectra to process."
             arg_type = Int
@@ -204,6 +255,8 @@ println("# Parsing arguments...")
      return parse_args(s)
  end
  args = parse_commandline()
+=#
+ args = parse_commandline_calc_order_ccfs()
 
 verbose = haskey(args,"verbose") ? args["verbose"] : verbose
 
@@ -215,6 +268,15 @@ if verbose   println("# Loading other packages 2/2")    end
  using JLD2, FileIO, MD5 #, SHA
  using StatsBase, Statistics, NaNMath
 
+function extract_time_from_filename(fn::AbstractString)
+    m = match(r"neidL\d_(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})\.fits$",basename(fn))
+    if length(m)<6 
+        @warn("Can't extract time from " * fn)
+        return nothing
+    end
+    return Time(parse(Int,m[4]),parse(Int,m[5]),parse(Int,m[6]))
+end
+    
  # Filename arguments
  @assert isfile(args["manifest"]) || islink(args["manifest"])
  manifest_filename = args["manifest"]
@@ -302,6 +364,8 @@ if verbose   println("# Loading other packages 2/2")    end
  @assert 0 <= range_no_mask_change <= 10
  start_time = args["start_time"] != nothing && length(args["start_time"]) == 2 ? Time(args["start_time"][1], args["start_time"][2]) : Time(0,0)
  stop_time =  args["stop_time"] != nothing && length(args["stop_time"]) == 2 ? Time(args["stop_time"][1],  args["stop_time"][2]) : Time(12,59,59)
+ start_time_clean = args["start_time_clean"] != nothing && length(args["start_time_clean"]) == 2 ? Time(args["start_time_clean"][1], args["start_time_clean"][2]) : Time(0,0)
+ stop_time_clean =  args["stop_time_clean"] != nothing && length(args["stop_time_clean"]) == 2 ? Time(args["stop_time_clean"][1],  args["stop_time_clean"][2]) : Time(12,59,59)
 
  @assert 3 <= args["continuum_poly_half_width"] <= 200 # arbitrary limits for now
  @assert 0.5 <= args["quantile_fit_continuum"] <= 1-1/(2*args["smoothing_half_width"])
@@ -368,34 +432,64 @@ if verbose println("# Reading manifest of files to process.")  end
     @filter( args["target"] == nothing || _.target == args["target"] ) |>
     DataFrame
   df_files_use = df_files_use |>   
-    @filter( args["datestr"] == nothing || occursin(args["datestr"],_.target) ) |>
+    @filter( args["datestr"] == nothing || occursin(args["datestr"],_.Filename) ) |>
     DataFrame
   df_files_use = df_files_use |>   
-    @filter( args["max_airmass"] == nothing || _.airmass <= args["max_airmass"] ) |>
+    @filter( _.drpversion != "" && (min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version )) |> 
     DataFrame
   df_files_use = df_files_use |>   
     @filter( args["max_solar_hour_angle"] == nothing || abs(_.hour_angle) <= args["max_solar_hour_angle"] ) |>
     DataFrame
   df_files_use = df_files_use |>   
-    @filter( args["start_time"] == nothing || Time(julian2datetime(_.bjd)) >= start_time ) |>
+    @filter( args["max_airmass"] == nothing || _.airmass <= args["max_airmass"] ) |>
     DataFrame
   df_files_use = df_files_use |>   
-    @filter( args["stop_time"] == nothing || Time(julian2datetime(_.bjd)) <= stop_time ) |> # TODO for other instruments may need to deal wtih cross end of 24 UTC
+    @filter( args["min_expmeter"] == nothing || _.expmeter_mean >= args["min_expmeter"] ) |>
     DataFrame
-  df_files_use = df_files_use |>   
-    @filter( _.drpversion != "" && (min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version )) |> 
-    DataFrame
-    # @filter( args["min_snr_factor"] == nothing || sum(_.order_snrs) >= args["min_snr_factor"] * max_snr ) |>
-    # TODO: Replace to use expmeter or pyrheliometer data
   if !hasproperty(df_files_use,:mean_pyroflux) || !hasproperty(df_files_use,:rms_pyroflux) || any(ismissing.(df_files_use.mean_pyroflux)) || any(ismissing.(df_files_use.rms_pyroflux))
      @error "Manifest file doesn't include valid mean_pyroflux and/or rms_pyroflux." manifest_filename 
   end
   df_files_use = df_files_use |>   
+    @filter( args["min_pyrhelio"] == nothing || _.mean_pyroflux >= args["min_pyrhelio"] ) |>
+    DataFrame
+  df_files_use = df_files_use |>   
+    @filter( args["max_expmeter_rms_frac"] == nothing || _.expmeter_rms <= args["max_expmeter_rms_frac"]*_.expmeter_mean  ) |>
+    DataFrame
+  df_files_use = df_files_use |>   
+    @filter( args["max_pyrhelio_rms_frac"] == nothing || _.rms_pyroflux <= args["max_pyrhelio_rms_frac"]*_.mean_pyroflux  ) |>
+    DataFrame
+ df_files_use = df_files_use |>   
+    @filter( args["min_expmeter_to_pyrhelio"] == nothing || _.expmeter_mean >= args["min_expmeter_to_pyrhelio"]*_.mean_pyroflux  ) |>
+    DataFrame
+ df_files_use = df_files_use |>   
+    @filter( args["start_time"] == nothing || extract_time_from_filename(_.Filename) >= start_time ) |>
+    DataFrame
+  df_files_use = df_files_use |>   
+    @filter( args["stop_time"] == nothing || extract_time_from_filename(_.Filename) <= stop_time ) |> # TODO for other instruments may need to deal wtih cross end of 24 UTC
+    DataFrame
+  df_files_use = df_files_use |>   
+    @filter( args["max_airmass"] == nothing || _.airmass <= args["max_airmass"] ) |>
+    DataFrame
+  if hasproperty(df_files_use,:dq1level)
+    df_files_use = df_files_use |>   
+       @filter( mod(_.dq1level,4) <2  ) |>
+       DataFrame
+  end
+  
+  #=
+ df_files_use = df_files_use |>   
+    @filter( _.drpversion != "" && (min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version )) |> 
+    DataFrame
+ if !hasproperty(df_files_use,:mean_pyroflux) || !hasproperty(df_files_use,:rms_pyroflux) || any(ismissing.(df_files_use.mean_pyroflux)) || any(ismissing.(df_files_use.rms_pyroflux))
+     @error "Manifest file doesn't include valid mean_pyroflux and/or rms_pyroflux." manifest_filename 
+  end  
+ df_files_use = df_files_use |>   
     @filter( _.rms_pyroflux <= 0.0035* _.mean_pyroflux ) |> 
     DataFrame
   df_files_use = df_files_use |>   
     @filter( _.expmeter_mean >= 6e4 ) |> 
     DataFrame
+ =#
   df_files_use = df_files_use |>   
     @filter( _.driftfun == "dailymodel0" ) |>
     DataFrame
@@ -412,16 +506,137 @@ if verbose println("# Reading manifest of files to process.")  end
 
 #max_drp_minor_version = Base.thisminor(maximum(VersionNumber.(df_files_use.drpversion)))
 
+#=
 df_files_cleanest = df_files_use |>
     @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
-    #@filter( _.airmass <= 2.0 ) |>
     @filter( _.airmass <= args["max_airmass_clean"] ) |>
     @filter( abs(_.hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
+    DataFrame
+  println("# Found ", size(df_files_cleanest,1), " files considered clean 1.")
+
+df_files_cleanest = df_files_use |>
+    @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
+    @filter( _.airmass <= args["max_airmass_clean"] ) |>
+    @filter( abs(_.hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
+    @filter( _.expmeter_mean >= args["min_expmeter_clean"] ) |> 
+    @filter( _.mean_pyroflux >= args["min_pyrhelio_clean"] ) |> 
+    @take(args["max_num_spectra_clean"] ) |>
+    DataFrame
+  println("# Found ", size(df_files_cleanest,1), " files considered clean 2.")
+
+df_files_cleanest = df_files_use |>
+    @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
+    @filter( _.airmass <= args["max_airmass_clean"] ) |>
+    @filter( abs(_.hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
+    @filter( _.expmeter_mean >= args["min_expmeter_clean"] ) |> 
+    @filter( _.mean_pyroflux >= args["min_pyrhelio_clean"] ) |> 
+    @filter( _.expmeter_rms <= args["max_expmeter_rms_frac_clean"]*_.expmeter_mean ) |> 
+    @filter( _.rms_pyroflux <= args["max_pyrhelio_rms_frac_clean"]*_.mean_pyroflux  ) |> 
+    DataFrame
+  println("# Found ", size(df_files_cleanest,1), " files considered clean. 3")
+=#
+
+println("# Extracting time (", extract_time_from_filename(df_files_use.Filename[1]), ") from first filename (", df_files_use.Filename[1], ")")
+println("# start_time_clean = ", start_time_clean)
+println("# stop_time_clean = ", stop_time_clean)
+for fn in df_files_use.Filename
+    println("# ", start_time_clean<=extract_time_from_filename(fn)<=stop_time_clean, " time (", extract_time_from_filename(fn), ") from filename (", fn, ")")
+end
+
+df_files_cleanest = df_files_use |>
+    @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
+    @filter( _.airmass <= args["max_airmass_clean"] ) |>
+    @filter( abs(_.hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
+    DataFrame
+  println("# Found ", size(df_files_cleanest,1), " files considered clean 0.")
+
+df_files_cleanest = df_files_use |>
+    @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
+    @filter( _.airmass <= args["max_airmass_clean"] ) |>
+    @filter( abs(_.hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
+    @filter( _.expmeter_mean >= args["min_expmeter_clean"] ) |> 
+    @filter( _.mean_pyroflux >= args["min_pyrhelio_clean"] ) |> 
+    DataFrame
+  println("# Found ", size(df_files_cleanest,1), " files considered clean 1.")
+
+df_files_cleanest = df_files_use |>
+    @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
+    @filter( _.airmass <= args["max_airmass_clean"] ) |>
+    @filter( abs(_.hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
+    @filter( _.expmeter_mean >= args["min_expmeter_clean"] ) |> 
+    @filter( _.mean_pyroflux >= args["min_pyrhelio_clean"] ) |> 
+    @filter( _.expmeter_rms <= args["max_expmeter_rms_frac_clean"]*_.expmeter_mean ) |> 
+    @filter( _.rms_pyroflux <= args["max_pyrhelio_rms_frac_clean"]*_.mean_pyroflux  ) |> 
+    DataFrame
+  println("# Found ", size(df_files_cleanest,1), " files considered clean 2.")
+
+df_files_cleanest = df_files_use |>
+    @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
+    @filter( _.airmass <= args["max_airmass_clean"] ) |>
+    @filter( abs(_.hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
+    @filter( _.expmeter_mean >= args["min_expmeter_clean"] ) |> 
+    @filter( _.mean_pyroflux >= args["min_pyrhelio_clean"] ) |> 
+    @filter( _.expmeter_rms <= args["max_expmeter_rms_frac_clean"]*_.expmeter_mean ) |> 
+    @filter( _.rms_pyroflux <= args["max_pyrhelio_rms_frac_clean"]*_.mean_pyroflux  ) |> 
+    @filter( _.expmeter_mean >= args["min_expmeter_to_pyrhelio_clean"]*_.mean_pyroflux ) |> 
+    DataFrame
+  println("# Found ", size(df_files_cleanest,1), " files considered clean 3.")
+
+df_files_cleanest = df_files_use |>
+    @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
+    @filter( _.airmass <= args["max_airmass_clean"] ) |>
+    @filter( abs(_.hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
+    @filter( _.expmeter_mean >= args["min_expmeter_clean"] ) |> 
+    @filter( _.mean_pyroflux >= args["min_pyrhelio_clean"] ) |> 
+    @filter( _.expmeter_rms <= args["max_expmeter_rms_frac_clean"]*_.expmeter_mean ) |> 
+    @filter( _.rms_pyroflux <= args["max_pyrhelio_rms_frac_clean"]*_.mean_pyroflux  ) |> 
+    @filter( _.expmeter_mean >= args["min_expmeter_to_pyrhelio_clean"]*_.mean_pyroflux ) |> 
+    @filter(  extract_time_from_filename(_.Filename) >= start_time_clean ) |> 
+    DataFrame
+  println("# Found ", size(df_files_cleanest,1), " files considered clean 4.")
+
+df_files_cleanest = df_files_use |>
+    @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
+    @filter( _.airmass <= args["max_airmass_clean"] ) |>
+    @filter( abs(_.hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
+    @filter( _.expmeter_mean >= args["min_expmeter_clean"] ) |> 
+    @filter( _.mean_pyroflux >= args["min_pyrhelio_clean"] ) |> 
+    @filter( _.expmeter_rms <= args["max_expmeter_rms_frac_clean"]*_.expmeter_mean ) |> 
+    @filter( _.rms_pyroflux <= args["max_pyrhelio_rms_frac_clean"]*_.mean_pyroflux  ) |> 
+    @filter( _.expmeter_mean >= args["min_expmeter_to_pyrhelio_clean"]*_.mean_pyroflux ) |> 
+    @filter(  extract_time_from_filename(_.Filename) <= stop_time_clean ) |> 
+    DataFrame
+  println("# Found ", size(df_files_cleanest,1), " files considered clean 5.")
+
+df_files_cleanest = df_files_use |>
+    @filter( min_drp_minor_version <= Base.thisminor(VersionNumber(_.drpversion)) <= max_drp_minor_version ) |> 
+    @filter( _.airmass <= args["max_airmass_clean"] ) |>
+    @filter( abs(_.hour_angle) <= args["max_solar_hour_angle_clean"] ) |>
+    @filter( _.expmeter_mean >= args["min_expmeter_clean"] ) |> 
+    @filter( _.mean_pyroflux >= args["min_pyrhelio_clean"] ) |> 
+    @filter( _.expmeter_rms <= args["max_expmeter_rms_frac_clean"]*_.expmeter_mean ) |> 
+    @filter( _.rms_pyroflux <= args["max_pyrhelio_rms_frac_clean"]*_.mean_pyroflux  ) |> 
+    @filter( _.expmeter_mean >= args["min_expmeter_to_pyrhelio_clean"]*_.mean_pyroflux ) |> 
+    @filter(  extract_time_from_filename(_.Filename) >= start_time_clean ) |> 
+    @filter(  extract_time_from_filename(_.Filename) <= stop_time_clean ) |> 
     @orderby( abs(_.hour_angle) ) |> 
     @take(args["max_num_spectra_clean"] ) |>
     DataFrame
   println("# Found ", size(df_files_cleanest,1), " files considered clean.")
-  #@assert size(df_files_cleanest,1) >= 1
+
+
+@assert size(df_files_cleanest,1) >= 1
+
+  if hasproperty(df_files_cleanest,:dq1level)
+    df_files_cleanest = df_files_cleanest |>   
+       @filter( mod(_.dq1level,4) == 0  ) |>
+       DataFrame
+  end
+
+if !(size(df_files_cleanest,1) >=1)
+    @warn("No inputs passed all test for making clean spectra.")
+end
+@assert size(df_files_cleanest,1) >= 1
 
 clean_obs_mask = map(fn->in(fn, df_files_cleanest.Filename),df_files_use.Filename) 
 
