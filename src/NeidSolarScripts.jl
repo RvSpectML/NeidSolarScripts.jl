@@ -33,4 +33,10 @@ export DifferentialExtinction
 include("continuum_rassine_like.jl")
 export Continuum
 
+
+include("arg_parse.jl")
+export parse_commandline_make_manifest_solar, parse_commandline_make_pyrheliometer_daily, parse_commandline_verify_downloads
+export parse_commandline_calc_order_ccfs 
+export parse_commandline_daily_report, parse_commandline_combine_daily_reports, parse_commandline_combine_daily_rvs
+
 end

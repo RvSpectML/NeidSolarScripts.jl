@@ -2,9 +2,11 @@ using Markdown
 using InteractiveUtils
 using CSV, DataFrames, Query
 using Dates, MD5
-using ArgParse
+using NeidSolarScripts
 
-  function parse_commandline_verify_downloads()
+#=
+using ArgParse
+function parse_commandline_verify_downloads()
      s = ArgParseSettings( description = "Verify FITS file downloads match contents of meta.csv.")
      @add_arg_table! s begin
          "inputdir"
@@ -49,7 +51,8 @@ using ArgParse
 
      return parse_args(s)
  end
- args = parse_commandline_verify_downloads()
+=#
+args = parse_commandline_verify_downloads()
 
 
 compute_checksums = args["checksums"]
