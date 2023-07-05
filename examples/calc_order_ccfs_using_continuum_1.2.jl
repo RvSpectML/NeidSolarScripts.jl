@@ -260,7 +260,7 @@ function parse_commandline()
 
 verbose = haskey(args,"verbose") ? args["verbose"] : verbose
 
-if verbose println(now()) end
+if verbose println("# ", now()) end
  #println("# Loading other packages 1/2")
 
 if verbose   println("# Loading other packages 2/2")    end
@@ -517,8 +517,6 @@ df_files_cleanest = df_files_use |>
     @filter( _.expmeter_mean >= args["min_expmeter_to_pyrhelio_clean"]*_.mean_pyroflux ) |> 
     @filter(  extract_time_from_filename(_.Filename) >= start_time_clean ) |> 
     @filter(  extract_time_from_filename(_.Filename) <= stop_time_clean ) |> 
-    @orderby( abs(_.hour_angle) ) |> 
-    @take(args["max_num_spectra_clean"] ) |>
     DataFrame
 
   if hasproperty(df_files_cleanest,:dq1level)
@@ -527,6 +525,11 @@ df_files_cleanest = df_files_use |>
        DataFrame
   end
   println("# Found ", size(df_files_cleanest,1), " files considered clean.")
+
+  df_files_cleanest = df_files_cleanest |>
+    @orderby( abs(_.hour_angle) ) |> 
+    @take(args["max_num_spectra_clean"] ) |>
+    DataFrame
 
 if !(size(df_files_cleanest,1) >=1)
     @warn("No inputs passed all test for making clean spectra.")
@@ -612,7 +615,7 @@ pipeline_plan = PipelinePlan()
 
  
    if args["apply_continuum_normalization"] && args["continuum_normalization_individually"]
-        println("Applying continuum normalization to each spectrum individually.")
+        println("# Applying continuum normalization to each spectrum individually.")
         local anchors, continuum, f_filtered
         if args["anchors_filename"] != nothing
             @assert isfile(args["anchors_filename"]) && filesize(args["anchors_filename"])>0
@@ -660,7 +663,7 @@ pipeline_plan = PipelinePlan()
 
 
  if args["apply_continuum_normalization"] && !args["continuum_normalization_individually"]
-     println("Applying continuum normalization based on mean of clean spectra.")
+     println("# Applying continuum normalization based on mean of clean spectra.")
      local anchors, continuum, f_filtered
      if args["anchors_filename"] !=nothing
          @assert isfile(args["anchors_filename"]) && filesize(args["anchors_filename"])>0
@@ -812,7 +815,7 @@ println("# Saving results to ", daily_ccf_filename, ".")
     f["drpversion"] = max_drp_minor_version 
     f["file_hashes"] = file_hashes
   end
-if verbose println(now()) end
+if verbose println("# Finished at ", now()) end
 
 #=
 for (i,row) in enumerate(eachrow(df_files_use))
