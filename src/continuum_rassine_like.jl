@@ -649,7 +649,7 @@ function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3, anchors::AV5; λout::
  mean_snr_per_pix = calc_mean_snr(f_obs,var_obs)
  #smoothing_half_width = (mean_snr_per_pix >= 30) ? smoothing_half_width : 40
  if mean_snr_per_pix < 30
-    smoothing_half_width_float = 6*(30/mean_snr_per_pix)^2)
+    smoothing_half_width_float = 6*(30/mean_snr_per_pix)^2
     smoothing_half_width = smoothing_half_width_float>100 ? 100 : ceil(Int64,smoothing_half_width_float)
  end
  f_smooth = Continuum.smooth(f_obs, half_width=smoothing_half_width)
