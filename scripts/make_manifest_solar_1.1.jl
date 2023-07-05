@@ -1,9 +1,10 @@
+
+
+
+
+
+#=
 using ArgParse
-
-
-
-
-
 function parse_commandline_make_manifest_solar()
      s = ArgParseSettings( description = "Make manifest.csv from FITS files in inputdir.")
      @add_arg_table! s begin
@@ -35,6 +36,9 @@ function parse_commandline_make_manifest_solar()
          "--create-continuum"
             help = "Create missing continuum files"
             action = :store_true
+         "--calc_order_snr"
+            help = "Calculate order SNRs"
+            action = :store_false
          "--verbose"
             help = "Verbose outputs"
             action = :store_true
@@ -42,16 +46,9 @@ function parse_commandline_make_manifest_solar()
 
   return parse_args(s)
 end
-args = parse_commandline_make_manifest_solar()
-if haskey(args,"root")       root_dir            = args["root"]   end
-if haskey(args,"input")      input_dir           = args["input"]   end
-if haskey(args,"output")     output_dir          = args["output"]      end 
-if haskey(args,"subdir")     subdir              = args["subdir"]      end
-#if haskey(args,"pyrohelio")  pyrohelio_dir       = args["pyrohelio"]   end 
-if haskey(args,"pyrheliometer")  pyrheliometer_dir       = args["pyrheliometer"]   end 
-create_missing_continuum_files = haskey(args,"create-continuum") ? args["create-continuum"] : false
-verbose = haskey(args,"verbose") ? args["verbose"] : false
+=#
 
+verbose = false
 if verbose && !isdefined(Main,:RvSpectML)  println("# Loading RvSpecML")    end
  using RvSpectMLBase
  using EchelleInstruments, EchelleInstruments.NEID
@@ -63,8 +60,19 @@ if verbose && !isdefined(Main,:RvSpectML)  println("# Loading RvSpecML")    end
  using SunAsAStar.DifferentialExtinction
  if verbose   println("# Loading other packages")    end
  using CSV, DataFrames, Query, Dates
+ using NaNMath
  #using StatsBase, Statistics, Dates
 
+args = parse_commandline_make_manifest_solar()
+if haskey(args,"root")       root_dir            = args["root"]   end
+if haskey(args,"input")      input_dir           = args["input"]   end
+if haskey(args,"output")     output_dir          = args["output"]      end 
+if haskey(args,"subdir")     subdir              = args["subdir"]      end
+#if haskey(args,"pyrohelio")  pyrohelio_dir       = args["pyrohelio"]   end 
+if haskey(args,"pyrheliometer")  pyrheliometer_dir       = args["pyrheliometer"]   end 
+create_missing_continuum_files = haskey(args,"create-continuum") ? args["create-continuum"] : false
+calc_order_snr =  haskey(args,"calc_order_snr") ? args["calc_order_snr"] : false
+verbose = haskey(args,"verbose") ? args["verbose"] : false
 
 fits_target_str = "Sun"
  paths_to_search_for_param = [pwd(),pkgdir(NeidSolarScripts)]
@@ -275,11 +283,11 @@ if verbose println("# Reading in customized parameters from param.jl.")  end
 =#
 
 
-#using NaNMath
-compute_order_snr = false
-if compute_order_snr
-println("# Computing order SNRs")
-df_files_use[!,:order_snrs] = fill(zeros(0),size(df_files_use,1))
+try
+#using NaNMath # Uncommented
+if calc_order_snr
+   println("# Computing all order SNRs")
+   df_files_use[!,:order_snrs] = fill(zeros(0),size(df_files_use,1))
    for (i,row) in enumerate(eachrow(df_files_use))
        #if row.target != "Sun" continue   end
        if any(map(ss->contains(row.target,ss),calibration_target_substrings))
@@ -292,6 +300,24 @@ df_files_use[!,:order_snrs] = fill(zeros(0),size(df_files_use,1))
        order_snr = map(ord->RvSpectMLBase.calc_snr(spec, pixels, ord), all_orders)
        df_files_use[i,:order_snrs] = order_snr
    end
+else
+   println("# Computing order 98 SNR")
+   df_files_use[!,:snr_order_98] = zeros(size(df_files_use,1))
+   for (i,row) in enumerate(eachrow(df_files_use))
+       #if row.target != "Sun" continue   end
+       if any(map(ss->contains(row.target,ss),calibration_target_substrings))
+           println("# Warning: target = ", row.target)
+           continue
+       end
+       spec = NEID.read_data(row)
+       order_idx = 76 # physical order 98
+       pixels = get_pixel_range(NEID2D(),order_idx)
+       order_snr = RvSpectMLBase.calc_snr(spec, pixels, order_idx)
+       df_files_use[i,:snr_order_98] = order_snr
+   end
+end
+catch
+   @warn("Error computing order SNR.")
 end
 
 println("# Writing manifest file.")
