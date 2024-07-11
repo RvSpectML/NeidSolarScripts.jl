@@ -43,6 +43,10 @@ function parse_commandline()
            arg_type = Int64
            #default = [ min_order(NEID2D()), max_order(NEID2D()) ]
            #default = [ first(orders_to_use_default(NEID2D())), last(orders_to_use_default(NEID2D())) ]
+        "--mask_shape"
+            help = "Specify CCF mask shape: gaussian, tophat, etc."
+            arg_type = String
+            default = "gaussian"
         "--mask_scale_factor"
             help = "Specify CCF mask width scale as multiple of NEID default v width " * string(default_ccf_mask_v_width(NEID2D()))
             arg_type = Float64
@@ -310,7 +314,7 @@ end
  end
  @assert isfile(line_list_filename) || islink(line_list_filename)
  if args["sed_filename"] != nothing
-    @warn("DRP v1.1 now provides blaze in L2 file.  This script has not been updated to use explicit an SED model.") 
+    @warn("DRP >=v1.1 now provides blaze in L2 file.  This script has not been updated to use explicit an SED model.") 
     sed_filename = args["sed_filename"]
  #elseif !@isdefined sed_filename
  #     sed_filename = joinpath("/home/eford/Code/RvSpectMLEcoSystem/NeidSolarScripts/data","neidMaster_HR_SmoothLampSED_20210101.fits")
@@ -342,6 +346,8 @@ end
  end
  @assert 50 <= v_step <= 2000 # m/s
 
+mask_shape = symbol(args["mask_shape"])
+@assert in(mask_shape,[:gaussian,:supergaussian,:tophat,:halfcos])
  if args["mask_scale_factor"] != nothing
      mask_scale_factor = args["mask_scale_factor"]
  elseif !@isdefined mask_scale_factor
@@ -446,17 +452,17 @@ if verbose println("# Reading manifest of files to process.")  end
   df_files_use = df_files_use |>   
     @filter( args["min_expmeter"] == nothing || _.expmeter_mean >= args["min_expmeter"] ) |>
     DataFrame
-  if !hasproperty(df_files_use,:mean_pyroflux) || !hasproperty(df_files_use,:rms_pyroflux) || any(ismissing.(df_files_use.mean_pyroflux)) || any(ismissing.(df_files_use.rms_pyroflux))
+  if !hasproperty(df_files_use,:mean_pyroflux) || !hasproperty(df_files_use,:rms_pyroflux) || all(ismissing.(df_files_use.mean_pyroflux)) || all(ismissing.(df_files_use.rms_pyroflux))
      @error "Manifest file doesn't include valid mean_pyroflux and/or rms_pyroflux." manifest_filename 
   end
   df_files_use = df_files_use |>   
-    @filter( args["min_pyrhelio"] == nothing || _.mean_pyroflux >= args["min_pyrhelio"] ) |>
+    @filter( args["min_pyrhelio"] == nothing || ((_.mean_pyroflux >= args["min_pyrhelio"]) && (!ismissing(_.mean_pyroflux)))  ) |>
     DataFrame
   df_files_use = df_files_use |>   
     @filter( args["max_expmeter_rms_frac"] == nothing || _.expmeter_rms <= args["max_expmeter_rms_frac"]*_.expmeter_mean  ) |>
     DataFrame
   df_files_use = df_files_use |>   
-    @filter( args["max_pyrhelio_rms_frac"] == nothing || _.rms_pyroflux <= args["max_pyrhelio_rms_frac"]*_.mean_pyroflux  ) |>
+    @filter( args["max_pyrhelio_rms_frac"] == nothing || (!ismissing(_.mean_pyroflux) && !ismissing(_.rms_pyroflux) && (_.rms_pyroflux <= args["max_pyrhelio_rms_frac"]*_.mean_pyroflux))  ) |>
     DataFrame
  df_files_use = df_files_use |>   
     @filter( args["min_expmeter_to_pyrhelio"] == nothing || _.expmeter_mean >= args["min_expmeter_to_pyrhelio"]*_.mean_pyroflux  ) |>
@@ -764,11 +770,39 @@ if verbose println(now()) end
 line_width_50 = line_width_50_default
   #order_list_timeseries = extract_orders(all_spectra,pipeline_plan,  orders_to_use=orders_to_use,  remove_bad_chunks=false, recalc=true )
   @time (order_ccfs, order_ccf_vars, v_grid_order_ccfs) = ccf_orders(order_list_timeseries, line_list_espresso, pipeline_plan,
+    mask_type=mask_shape, Δfwhm=Δfwhm,
+    mask_scale_factor=mask_scale_factor, range_no_mask_change=5*line_width_50, ccf_mid_velocity=ccf_mid_velocity, v_step=v_step,
+    v_max=max(range_no_mask_change*line_width_50,2*max_bc), orders_to_use=orders_to_use, allow_nans=true, calc_ccf_var=true,
+    recalc=true)
+  #=
+  if mask_shape == "gaussian"
+  @time (order_ccfs, order_ccf_vars, v_grid_order_ccfs) = ccf_orders(order_list_timeseries, line_list_espresso, pipeline_plan,
     mask_type=:gaussian, Δfwhm=Δfwhm,
     mask_scale_factor=mask_scale_factor, range_no_mask_change=5*line_width_50, ccf_mid_velocity=ccf_mid_velocity, v_step=v_step,
     v_max=max(range_no_mask_change*line_width_50,2*max_bc), orders_to_use=orders_to_use, allow_nans=true, calc_ccf_var=true,
     recalc=true)
-
+  elseif mask_shape == "tophat"
+  @time (order_ccfs, order_ccf_vars, v_grid_order_ccfs) = ccf_orders(order_list_timeseries, line_list_espresso, pipeline_plan,
+    mask_type=:tophat, Δfwhm=Δfwhm,
+    mask_scale_factor=mask_scale_factor, range_no_mask_change=5*line_width_50, ccf_mid_velocity=ccf_mid_velocity, v_step=v_step,
+    v_max=max(range_no_mask_change*line_width_50,2*max_bc), orders_to_use=orders_to_use, allow_nans=true, calc_ccf_var=true,
+    recalc=true)
+  elseif mask_shape == "supergaussian"
+  @time (order_ccfs, order_ccf_vars, v_grid_order_ccfs) = ccf_orders(order_list_timeseries, line_list_espresso, pipeline_plan,
+    mask_type=:supergaussian, Δfwhm=Δfwhm,
+    mask_scale_factor=mask_scale_factor, range_no_mask_change=5*line_width_50, ccf_mid_velocity=ccf_mid_velocity, v_step=v_step,
+    v_max=max(range_no_mask_change*line_width_50,2*max_bc), orders_to_use=orders_to_use, allow_nans=true, calc_ccf_var=true,
+    recalc=true)
+  elseif mask_shape == "halfcos"
+  @time (order_ccfs, order_ccf_vars, v_grid_order_ccfs) = ccf_orders(order_list_timeseries, line_list_espresso, pipeline_plan,
+    mask_type=:halfcos, Δfwhm=Δfwhm,
+    mask_scale_factor=mask_scale_factor, range_no_mask_change=5*line_width_50, ccf_mid_velocity=ccf_mid_velocity, v_step=v_step,
+    v_max=max(range_no_mask_change*line_width_50,2*max_bc), orders_to_use=orders_to_use, allow_nans=true, calc_ccf_var=true,
+    recalc=true)
+  else
+     @warn "Invalid mask_shape, using gaussian."
+  end
+  =#
 #orders_to_use2 = orders_to_use[map(i->!iszero(order_ccfs[:,i,:]),1:length(orders_to_use))]
 #order_list_timeseries2 = extract_orders(all_spectra,pipeline_plan,  orders_to_use=orders_to_use2,  remove_bad_chunks=false, recalc=true )
 

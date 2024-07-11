@@ -37,7 +37,7 @@ function parse_commandline_verify_downloads()
          "--max_num_spectra"
             help = "Maximum number of spectra to process."
             arg_type = Int
-            default = 300  
+            default = 400  
          "--crawl"
             help = "Run on each date's subdirectory."
             action = :store_true
@@ -65,7 +65,7 @@ begin
 	"""
 	function make_meta_redownload end
 	
-	function make_meta_redownload(input_path::String ; write_md5s::Bool = true, write_meta_redownload::Bool = true, max_files::Integer = 300, checksums::Bool = true )
+	function make_meta_redownload(input_path::String ; write_md5s::Bool = true, write_meta_redownload::Bool = true, max_files::Integer = 400, checksums::Bool = true )
 		meta_filename = joinpath(input_path,"meta.csv") 
 		manifest_filename = joinpath(input_path,"md5.csv") 
 		meta_out_filename = joinpath(input_path,"meta_redownload.csv")
@@ -96,7 +96,7 @@ begin
                         time_manifest = datetime2unix(now())
                         if checksums
 			   args["quiet"] || println("# Computing md5sums's for ", size(manifest,1), " files.")
-                           manifest = add_md5s!(manifest, max_files=300)
+                           manifest = add_md5s!(manifest, max_files=max_files)
                            if write_md5s
 			      args["quiet"] || println("# Writing $manifest_filename.")
                               CSV.write(manifest_filename,manifest)
@@ -140,7 +140,7 @@ begin
 		
 		if checksums && size(need_to_redownload_df,1) == 0
 			touch(verified_filename)
-			rm(meta_out_filename,force=true)
+			#rm(meta_out_filename,force=true)
 		end
 		if write_meta_redownload && (size(need_to_redownload_df,1)>=1)
 			CSV.write(meta_out_filename,need_to_redownload_df)
@@ -148,11 +148,11 @@ begin
 		need_to_redownload_df
 	end
 	
-	function add_md5s!(manifest_df::DataFrame; max_files::Integer = 300, checksums::Bool = true)
+	function add_md5s!(manifest_df::DataFrame; max_files::Integer = 400, checksums::Bool = true)
 		download_stats_df = manifest_df |> @take(max_files) |> @map({_.Filename, mtime_download=mtime(_.Filename), md5_download=string(bytes2hex(open(md5,_.Filename))) })  |> DataFrame
         end
 
-	function make_meta_redownload(meta_df::DataFrame, manifest_df::DataFrame, path::String; max_files::Integer = 300, checksums::Bool = true, suspect_dirname = "suspect" )
+	function make_meta_redownload(meta_df::DataFrame, manifest_df::DataFrame, path::String; max_files::Integer = 400, checksums::Bool = true, suspect_dirname = "suspect" )
                 if size(manifest_df,1) == 0
                    return meta_df
                    @warn("Empty dataframe meta: " * string(size(meta_df,1)) * ", manifest: " * string(size(manifest_df,1)) )
