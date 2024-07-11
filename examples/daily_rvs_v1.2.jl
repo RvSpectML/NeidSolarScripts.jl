@@ -325,13 +325,13 @@ for j in 1:num_orders_to_use
    end
    if occursin("gaussian",args["rv_alg"])
    # Gaussian fitting
-   order_rvs_gauss = DataFrame(map(i->any(isnan.(view(order_ccfs,:,j,i))) ? (rv=NaN, σ_rv=NaN) : measure_rv_from_ccf(v_grid,view(order_ccfs,:,j,i),view(order_ccf_vars,:,j,i),alg=alg_gauss) ,1:num_obs))
+   order_rvs_gauss = DataFrame(map(i->any(isnan.(view(order_ccfs,:,j,i))) || all(view(order_ccfs,:,j,i).==0) ? (rv=NaN, σ_rv=NaN) : measure_rv_from_ccf(v_grid,view(order_ccfs,:,j,i),view(order_ccf_vars,:,j,i),alg=alg_gauss) ,1:num_obs))
    df_out[!,Symbol("rv_" * string(orders_physical[j]) * "_gauss")] = order_rvs_gauss.rv
    df_out[!,Symbol("σrv_" * string(orders_physical[j]) * "_gauss")] = order_rvs_gauss.σ_rv
    end
    if occursin("quadratic",args["rv_alg"])
    # Quadratic fitting
-   order_rvs_quad = DataFrame(map(i->any(isnan.(view(order_ccfs,:,j,i))) ? (rv=NaN, σ_rv=NaN) : measure_rv_from_ccf(v_grid,view(order_ccfs,:,j,i),view(order_ccf_vars,:,j,i),alg=alg_quad),1:num_obs))
+   order_rvs_quad = DataFrame(map(i->any(isnan.(view(order_ccfs,:,j,i))) || all(view(order_ccfs,:,j,i).==0) ? (rv=NaN, σ_rv=NaN) : measure_rv_from_ccf(v_grid,view(order_ccfs,:,j,i),view(order_ccf_vars,:,j,i),alg=alg_quad),1:num_obs))
    df_out[!,Symbol("rv_" * string(orders_physical[j]) * "_quad")] = order_rvs_quad.rv
    df_out[!,Symbol("σrv_" * string(orders_physical[j]) * "_quad")] = order_rvs_quad.σ_rv
    end

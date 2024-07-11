@@ -177,6 +177,10 @@ end
            arg_type = Int64
            #default = [ min_order(NEID2D()), max_order(NEID2D()) ]
            #default = [ first(orders_to_use_default(NEID2D())), last(orders_to_use_default(NEID2D())) ]
+        "--mask_shape"
+            help = "Specify CCF mask shape: gaussian (default), supergaussian, tophat, halfcos, etc"
+            arg_type = String
+            default = "gaussian"
         "--mask_scale_factor"
             help = "Specify CCF mask width scale as multiple of NEID default v width (620.953 m/s)"
             arg_type = Float64
