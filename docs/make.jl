@@ -16,6 +16,8 @@ makedocs(;
     pages=[
         "Home" => "index.md",
     ],
+   #checkdocs=:none,
+   checkdocs=:exports,
 )
 
 deploydocs(;
