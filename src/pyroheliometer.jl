@@ -142,29 +142,54 @@ begin
 		m = match(r"neidL\d_(\d+T\d+)\.fits",fn)
 		@assert m != nothing
 		t_start = DateTime(m[1],DateFormat("yyyymmddTHHMMSS"))
+        println("# get_pyrohelio_summary on ", fn,"...") 
+        flush(stdout)
 		try
+		println("#    Open FITS...") 
+        flush(stdout)
 			f = FITS(fn)
 			@assert length(f) >= 1
+		println("#    read_header(f[1])...") 
+        flush(stdout)
 			hdr = read_header(f[1])
 			exptime = hdr["EXPTIME"]
+		println("#    read_header(f[SOLAR])...") 
+        flush(stdout)
 			hdr_pyrhelio = read_header(f["SOLAR"])
 			stel = hdr_pyrhelio["STEL"]
 			staz = hdr_pyrhelio["STAZ"]
 			#println(fn,": exptime = ", exptime)
+		println("#    read Time...") 
+        flush(stdout)
 
 			t = read(f["SOLAR"],"Time")
+        println("#    read Voltage...") 
+        flush(stdout)
         	v = read(f["SOLAR"],"Voltage")
+        println("#    read FluxDensity...") 
+        flush(stdout)
+        
         	fd = read(f["SOLAR"],"FluxDensity")
         	df_tmp = DataFrame(:Time=> DateTime.(t), :Voltage=>v, :FluxDensity=>fd)
 			#println(fn, ": pyrheliometer_flux = ", size(df_tmp.FluxDensity,1))
 			#df_tmp.Time = DateTime.(df_tmp.Time)
-        	mean_Δt = get_pyrohelio_mean_Δt(df_tmp)
+        	println("#    get_pyrohelio_mean_Δt...") 
+            flush(stdout)
+            mean_Δt = get_pyrohelio_mean_Δt(df_tmp)
 			mean_pyroflux = mean(df_tmp.FluxDensity)
         	rms_pyroflux = sqrt(var(df_tmp.FluxDensity, corrected=false))
         	(min_pyroflux,max_pyroflux) = extrema(df_tmp.FluxDensity)
+            println("#    close FITS...") 
+            flush(stdout)
 			close(f)
+            println("# Finished get_pyrohelio_summary on ", fn,"...") 
+            flush(stdout)
+		    
 			return (;filename=basename(fn), time_start=t_start, exptime, mean_Δt, mean_pyroflux, rms_pyroflux, min_pyroflux, max_pyroflux, stel, staz)
 		catch exepction
+            println("# Exception in get_pyrohelio_summary on ", fn,"...") 
+            flush(stdout)
+		
 			return (;filename=basename(fn), time_start=t_start, exptime=missing, mean_Δt=missing, mean_pyroflux=missing, rms_pyroflux=missing,  min_pyroflux=missing, max_pyroflux=missing, stel=missing, staz=missing)
 		end
 	end

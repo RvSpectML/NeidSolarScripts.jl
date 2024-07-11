@@ -346,7 +346,7 @@ end
  end
  @assert 50 <= v_step <= 2000 # m/s
 
-mask_shape = symbol(args["mask_shape"])
+mask_shape = Symbol(args["mask_shape"])
 @assert in(mask_shape,[:gaussian,:supergaussian,:tophat,:halfcos])
  if args["mask_scale_factor"] != nothing
      mask_scale_factor = args["mask_scale_factor"]
@@ -430,8 +430,8 @@ if verbose println("# Reading manifest of files to process.")  end
   #@assert args["min_snr_factor"] == nothing || 0 <= args["min_snr_factor"] < 1
   @assert args["max_solar_hour_angle"] == nothing || 0 < args["max_solar_hour_angle"] <= 6
  
- min_drp_minor_version = VersionNumber(1,2,0)
- max_drp_minor_version = VersionNumber(1,2,0)
+ min_drp_minor_version = VersionNumber(1,3,0)
+ max_drp_minor_version = VersionNumber(1,3,0)
 
 
   df_files_use = df_files |>

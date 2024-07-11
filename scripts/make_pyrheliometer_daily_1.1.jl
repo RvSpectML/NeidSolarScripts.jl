@@ -1,6 +1,7 @@
 using NeidSolarScripts
-using ArgParse
+#using ArgParse
 
+#=
 function parse_commandline_make_pyrheliometer_daily()
      s = ArgParseSettings( description = "Make pyrheliometer.csv for specified day.")
      @add_arg_table! s begin
@@ -55,14 +56,24 @@ function parse_commandline_make_pyrheliometer_daily()
 
   return parse_args(s)
 end
+=#
+if true # verbose 
+    println("# About to parse command line...") 
+    flush(stdout) 
+end
 args = parse_commandline_make_pyrheliometer_daily()
+verbose   = args["verbose"]
+if verbose 
+    println("# Parsed.")  
+    flush(stdout) 
+end
 root_dir = args["root"]
 output_fn = joinpath(root_dir,args["output"]) # if haskey(args,"output")     output_fn          = args["output"]      end
 mkpath(dirname(output_fn))
 tmp_path  = !isnothing(args["work_dir"]) ? joinpath(root_dir,args["work_dir"]) : Filesystem.mktempdir()
 pyrohelio_dir = !isnothing(args["pyrheliometer_dir"]) ? joinpath(root_dir,args["pyrheliometer_dir"]) : nothing
 nexsci_login_fn = !isnothing(args["nexsci_login_filename"]) ? joinpath(root_dir,args["nexsci_login_filename"]) : nothing
-verbose   = args["verbose"]
+#verbose   = args["verbose"]
 
 using Dates
 using CSV, DataFrames, Query
@@ -85,9 +96,17 @@ if !occursin(r"\.csv$", args["manifest_or_date"])
    target_date = Date(m[1]*m[2]*m[3],DateFormat("yyyymmdd"))
    df_in = DataFrame()
 else
+    if verbose 
+        println("# About to read existing manifest...") 
+        flush(stdout)
+    end
    manifest_fn = joinpath(root_dir,args["manifest_or_date"])
    @assert filesize(manifest_fn) > 0
    df_in = CSV.read(manifest_fn,DataFrame)
+    if verbose 
+        println("# Done reading existing manifest.") 
+        flush(stdout)
+    end
    if hasproperty(df_in, :l0filename)   df_in = df_in |> @rename(:l0filename => :Filename) |> DataFrame  end
    if hasproperty(df_in, :l1filename)   df_in = df_in |> @rename(:l1filename => :Filename) |> DataFrame  end
    if hasproperty(df_in, :l2filename)   df_in = df_in |> @rename(:l2filename => :Filename) |> DataFrame  end
@@ -110,6 +129,10 @@ else
       target_date = Date(m[1]*m[2]*m[3],DateFormat("yyyymmdd"))
    end
 end
+if verbose 
+    println("# size(df_in,1) = ", size(df_in,1)) 
+    flush(stdout)  
+end
 
 using TOML
 using NeidArchive
@@ -130,14 +153,30 @@ if (size(df_in,1) == 0) && (!isnothing(target_date))
    if !isdir(tmp_path)  mkpath(tmp_path) end
    query_fn  =  !isnothing(args["query_filename"]) ? joinpath(tmp_path,args["query_filename"]) : nothing
 
+    if verbose 
+        println("# About to login to Neid archive...") 
+        flush(stdout)
+    end
    NeidArchive.login(userid=user_nexsci, password=password_nexsci, cookiepath=cookie_fn)
+    if verbose 
+        println("# Done querying Neid archive.") 
+        flush(stdout)
+    end
    param = Dict{String,String}()
    param["datalevel"] = "solarl0"
    param["piname"] = "Mahadevan"
    param["object"] = "Sun"
    param["datetime"] = NeidArchive.datetime_one_day_solar(target_date)
 
+    if verbose 
+        println("# About to query Neid archive...") 
+        flush(stdout)
+    end
    NeidArchive.query(param, cookiepath=cookie_fn, outpath=query_fn)
+    if verbose 
+        println("# Done querying Neid archive.") 
+        flush(stdout)
+    end
    num_lines = countlines(query_fn) - 1
    println("# Query resulted in file with ", num_lines, " entries.")
    manifest_fn = query_fn
@@ -147,10 +186,26 @@ if (size(df_in,1) == 0) && (!isnothing(target_date))
 end
 
 if args["try_tel_first"] && (!isnothing(pyrohelio_dir) && isdir(pyrohelio_dir))
+    if verbose 
+        println("# About to make_pyrohelio_file_dataframe (1)...") 
+        flush(stdout)  
+    end
    pyrohelio_files = Pyroheliometer.make_pyrohelio_file_dataframe(pyrohelio_dir)
+    if verbose
+        println("# Done.")
+        flush(stdout) 
+    end
    @assert hasproperty(df_in,"Filename")
    @assert hasproperty(df_in,"exptime")
-   df_out = DataFrame(map(r->Pyroheliometer.get_pyrohelio_summary(pyrohelio_files, string(r.Filename), r.exptime), eachrow(df_in)))
+    if verbose 
+        println("# About to get_pyrohelio_summary (1)...") 
+        flush(stdout)  
+    end
+    df_out = DataFrame(map(r->Pyroheliometer.get_pyrohelio_summary(pyrohelio_files, string(r.Filename), r.exptime), eachrow(df_in)))
+    if verbose
+        println("# Done.")
+        flush(stdout) 
+    end
 else
    pyrohelio_files = DataFrame()
    df_out = DataFrame()
@@ -162,18 +217,49 @@ if (size(df_out,1) == 0) || any(ismissing.(df_out.mean_pyroflux))
    #NeidArchive.download(query_fn, param["datalevel"], outdir=tmp_path, cookiepath=cookie_fn, start_row=1, end_row=10)
    #NeidArchive.download(query_fn, "l0", outdir=tmp_path, cookiepath=cookie_fn, start_row=1, end_row=10)
    #NeidArchive.download(query_fn, "l0", outdir=tmp_path, cookiepath=cookie_fn)
-   df_out = DataFrame(map(fn->Pyroheliometer.get_pyrohelio_summary(joinpath(tmp_path,replace(string(fn),"neidL2_"=>"neidL0_"))),df_in.Filename))
+    if verbose 
+        println("# About to get_pyrohelio_summary (2) into ", tmp_path, "...") 
+        flush(stdout)  
+    end
+    df_out = DataFrame(map(fn->Pyroheliometer.get_pyrohelio_summary(joinpath(tmp_path,replace(string(fn),"neidL2_"=>"neidL0_"))),df_in.Filename))
+    if verbose
+        println("# Done.")
+        flush(stdout) 
+    end
 end
 
 if (size(df_out,1) == 0) && !args["try_tel_first"] && (!isnothing(pyrohelio_dir) && isdir(pyrohelio_dir))
+    if verbose 
+        println("# About to make_pyrohelio_file_dataframe (2)...") 
+        flush(stdout)  
+    end
    pyrohelio_files = Pyroheliometer.make_pyrohelio_file_dataframe(pyrohelio_dir)
+    if verbose
+        println("# Done.")
+        flush(stdout) 
+    end
    @assert hasproperty(df_in,"Filename")
    @assert hasproperty(df_in,"exptime")
+    if verbose 
+        println("# About to get_pyrohelio_summary (3)...") 
+        flush(stdout)  
+    end
    df_out = DataFrame(map(r->Pyroheliometer.get_pyrohelio_summary(pyrohelio_files, string(r.Filename), r.exptime), eachrow(df_in)))
+    if verbose
+        println("# Done.")
+        flush(stdout) 
+    end
 end
 
-
+if verbose 
+    println("# About to write output...") 
+    flush(stdout)
+end
 CSV.write(output_fn, df_out)
+if verbose 
+    println("# Done.")
+    flush(stdout)
+end
 df_to_rm = df_in |> @filter( occursin(r"neidL0_\d{8}T\d+\.fits",_.Filename) ) |> @select(:Filename) |> @filter(isfile(_.Filename)) |> DataFrame
 #map(fn->println("rm $fn"),df_to_rm.Filename)
 exit(0)

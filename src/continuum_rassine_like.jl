@@ -269,6 +269,7 @@ function calc_rollingpin_radius(λ::AV1, f::AV2; fwhm::Real = fwhm_sol,
      println("rollingpin_R_max = ", rollingpin_R_max)
    end
    rollingpin_radius = (λ./λlo).*(rollingpin_R_min .+ (rollingpin_R_max-rollingpin_R_min).*((f_max2.-f_max1)./f_max2).^ν)
+   rollingpin_radius = abs.(rollingpin_radius)
    #plot!(lambda,f_max1,color=:red)
    #plot!(lambda,f_max2,color=:magenta)
    #plot!(lambda,penalty)
@@ -630,7 +631,8 @@ function calc_continuum(λ::AV1, f_obs::AV2, var_obs::AV3; λout::AV4 = λ, fwhm
     anchors_merged = anch_orig[anch_mask]
  end
  if length(anchors_merged) < 4
-   println("# Warning only ",  length(anchors_merged), " anchors found, using simpler smoothing.")
+   #println("# Warning only ",  length(anchors_merged), " anchors found, using simpler smoothing.")
+   if verbose  println("# Warning only ",  length(anchors_merged), " anchors found, using simpler smoothing.")  end
    #half_width = min_R_factor*(fwhm/speed_of_light_mks)/log(8*log(2))*minimum(λ)/(λ[2]-λ[1])
    #f_alt_continuum = Continuum.smooth(f_obs, half_width=floor(Int64,half_width/2)*2 )
    f_alt_continuum = Continuum.smooth(f_obs, half_width=smoothing_half_width_no_anchors)
